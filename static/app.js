@@ -11,6 +11,7 @@
   kpi_events: [],
   trend_signals: [],
   experiments: [],
+  portal_catalog: null,
   mode_extensions: [],
   completion: null,
   project_kpi: null,
@@ -511,6 +512,33 @@ function renderFinalApprovalTab(){
   }
 }
 
+function renderPortalTab(){
+  const el = $("tab-portal");
+  if(!el) return;
+  const games = (state.portal_catalog && state.portal_catalog.games) || [];
+  el.innerHTML = `
+    <div class="detail">
+      <h3>게임 포털 (공개본)</h3>
+      <div class="hint" style="margin-bottom:8px;">최종 승인 후 출시된 게임만 자동 등록됩니다.</div>
+      ${games.length ? games.map((g) => `
+        <div class="detail" style="margin-bottom:8px;">
+          <div class="kv">
+            <div>${esc(g.project_id)} · ${esc(short(g.title, 34))}</div><b>${esc(g.release_version || "-")}</b>
+            <div>장르/모드</div><b>${esc(g.genre || "-")} / ${esc(g.mode || "-")}</b>
+            <div>품질/빌드</div><b>${esc(Number(g.quality_score || 0).toFixed(1))} / ${esc(String(g.build_count || 0))}</b>
+            <div>24h KPI</div><b>${esc(`세션 ${Number((g.kpi_24h||{}).sessions||0)} · 설치 ${Number((g.kpi_24h||{}).installs||0)} · 매출 ${Number((g.kpi_24h||{}).revenue||0).toFixed(2)}`)}</b>
+          </div>
+          <div class="hint">요약: ${esc(short(g.summary || "-", 120))}</div>
+          <div class="hint">광고 슬롯: 좌측/우측 자리 예약됨 (현재 placeholder)</div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <a class="btn btn-primary" href="${esc(g.demo_url)}" target="_blank" rel="noopener">플레이</a>
+          </div>
+        </div>
+      `).join("") : `<div class="hint">아직 공개된 게임이 없습니다. 최종 승인 후 자동 등록됩니다.</div>`}
+    </div>
+  `;
+}
+
 function renderMinutesTab(){
   const el = $("tab-minutes");
   if(!el) return;
@@ -600,7 +628,7 @@ function renderAbout(){
 function setTab(tab){
   currentTab = tab;
   for(const b of document.querySelectorAll('.tab')) b.classList.toggle('active', b.dataset.tab === tab);
-  const tabs = ["details","preview","agents","approvals","kpi","releases","projects","final_approval","minutes","about"];
+  const tabs = ["details","preview","agents","approvals","kpi","releases","projects","final_approval","portal","minutes","about"];
   for(const t of tabs){
     const el = $(`tab-${t}`);
     if(el) el.classList.toggle('hidden', t !== tab);
@@ -618,6 +646,7 @@ function setTab(tab){
   if(tab === "releases") renderReleases();
   if(tab === "projects") renderProjectsTab();
   if(tab === "final_approval") renderFinalApprovalTab();
+  if(tab === "portal") renderPortalTab();
   if(tab === "minutes") renderMinutesTab();
   if(tab === "about"){
     renderAbout();
@@ -639,6 +668,7 @@ function renderAll(){
   renderReleases();
   renderProjectsTab();
   renderFinalApprovalTab();
+  renderPortalTab();
   renderMinutesTab();
   renderAbout();
   if($("btnAutoplay")) $("btnAutoplay").textContent = `자동 실행: ${state.control?.auto_run ? "ON" : "OFF"}`;
@@ -666,6 +696,15 @@ async function fetchLearning(){
     const data = await res.json();
     if(data && data.learning) state.learning = data.learning;
     if(currentTab === "about") renderAbout();
+  }catch(_){ }
+}
+
+async function fetchPortalCatalog(){
+  try{
+    const res = await fetch('/api/portal/catalog');
+    const data = await res.json();
+    state.portal_catalog = data || { games: [], total: 0 };
+    if(currentTab === "portal") renderPortalTab();
   }catch(_){ }
 }
 
@@ -752,6 +791,7 @@ function setupUI(){
   await fetchState();
   await fetchCompletion();
   await fetchLearning();
+  await fetchPortalCatalog();
   const p0 = [...(state.game_projects||[])].sort((a,b)=>String(b.id).localeCompare(String(a.id)))[0];
   if(p0 && p0.id) await fetchProjectKpi(p0.id);
   connectWS();
@@ -759,6 +799,7 @@ function setupUI(){
     fetchState();
     fetchCompletion();
     fetchLearning();
+    fetchPortalCatalog();
     if(currentTab === "preview"){
       const p = [...(state.game_projects||[])].sort((a,b)=>String(b.id).localeCompare(String(a.id)))[0];
       if(p && p.id) fetchProjectKpi(p.id);

@@ -319,6 +319,11 @@ async def get_project_kpi_summary(
     return {"summary": store.project_kpi_summary(project_id=project_id, since_minutes=since_minutes)}
 
 
+@app.get("/api/portal/catalog")
+async def get_portal_catalog() -> Dict[str, Any]:
+    return store.portal_catalog()
+
+
 @app.post("/api/kpi/events")
 async def create_kpi_event(body: KPIEventCreate) -> Dict[str, Any]:
     event_type = body.event_type.strip()

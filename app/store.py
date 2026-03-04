@@ -2694,6 +2694,47 @@ ctx.fillText('Time Up',cvs.width/2-90,cvs.height/2-8);ctx.font='22px Segoe UI';c
     def game_project_to_dict(self, g: GameProject) -> Dict[str, Any]:
         return asdict(g)
 
+    def portal_catalog(self) -> Dict[str, Any]:
+        items: List[Dict[str, Any]] = []
+        for gp in self.game_projects.values():
+            if str(gp.status) != "Released":
+                continue
+            if not gp.release_id or gp.release_id not in self.releases:
+                continue
+            rel = self.releases[gp.release_id]
+            if not rel.final_confirmed:
+                continue
+            if not gp.demo_url:
+                continue
+            kpi = self.project_kpi_summary(project_id=gp.id, since_minutes=1440)
+            items.append(
+                {
+                    "project_id": gp.id,
+                    "title": gp.title,
+                    "genre": gp.genre,
+                    "status": gp.status,
+                    "demo_url": gp.demo_url,
+                    "mode": str((gp.game_blueprint or {}).get("mode_label") or (gp.game_blueprint or {}).get("mode") or "-"),
+                    "quality_score": float(gp.quality_score or 0.0),
+                    "build_count": int(gp.demo_build_count or 0),
+                    "release_id": rel.id,
+                    "release_version": rel.version,
+                    "released_at": rel.final_confirmed_at or rel.deployed_at or gp.updated_at,
+                    "summary": str(gp.concept or "").strip()[:180],
+                    "kpi_24h": {
+                        "sessions": int(kpi.get("sessions", 0) or 0),
+                        "installs": int(kpi.get("installs", 0) or 0),
+                        "revenue": float(kpi.get("revenue", 0.0) or 0.0),
+                    },
+                    "ad_slots": [
+                        {"slot": "left", "status": "placeholder"},
+                        {"slot": "right", "status": "placeholder"},
+                    ],
+                }
+            )
+        items.sort(key=lambda x: str(x.get("released_at", "")), reverse=True)
+        return {"games": items, "total": len(items)}
+
     def snapshot(self) -> Dict[str, Any]:
         return {
             "control": {"auto_run": self.auto_run, "speed": self.speed},
