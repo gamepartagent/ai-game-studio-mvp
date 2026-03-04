@@ -2139,6 +2139,33 @@ class Store:
             "concept": gp.concept,
         }
 
+    def _render_asset_files(self, blueprint: Dict[str, Any]) -> Dict[str, str]:
+        theme = dict(blueprint.get("theme", {}) or {})
+        accent = str(theme.get("accent", "#7af0ff"))
+        enemy = "#ff7f8e"
+        orb = "#ffd56c"
+        boss = "#ff4d7b"
+        return {
+            "player.svg": f"""<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
+  <defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop stop-color='{accent}'/><stop offset='1' stop-color='#ffffff'/></linearGradient></defs>
+  <rect x='10' y='10' width='44' height='44' rx='12' fill='url(#g)'/>
+  <rect x='18' y='20' width='28' height='10' rx='4' fill='rgba(14,20,34,.45)'/>
+  <circle cx='24' cy='40' r='4' fill='white'/><circle cx='40' cy='40' r='4' fill='white'/>
+</svg>""",
+            "enemy.svg": f"""<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
+  <circle cx='32' cy='32' r='26' fill='{enemy}'/><circle cx='24' cy='28' r='5' fill='white'/><circle cx='40' cy='28' r='5' fill='white'/>
+  <rect x='20' y='40' width='24' height='6' rx='3' fill='rgba(20,10,18,.5)'/>
+</svg>""",
+            "orb.svg": f"""<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
+  <circle cx='32' cy='32' r='24' fill='{orb}'/><circle cx='24' cy='24' r='7' fill='rgba(255,255,255,.5)'/>
+</svg>""",
+            "boss.svg": f"""<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'>
+  <rect x='10' y='14' width='76' height='68' rx='16' fill='{boss}'/>
+  <circle cx='34' cy='44' r='7' fill='white'/><circle cx='62' cy='44' r='7' fill='white'/>
+  <rect x='28' y='62' width='40' height='8' rx='4' fill='rgba(20,10,18,.5)'/>
+</svg>""",
+        }
+
     def _render_game_html(self, gp: GameProject, blueprint: Dict[str, Any]) -> str:
         title = gp.title or f"{gp.genre} Prototype"
         mode_name = str(blueprint.get("mode_label") or "ARCADE")
@@ -2509,6 +2536,33 @@ class Store:
     }};
     window.__studioMeta.writeMissionHint(MODE_BASE);
 
+    const assetKeys = ['player','enemy','orb','boss'];
+    const assets = {{}};
+    function loadAsset(key) {{
+      return new Promise((resolve) => {{
+        const img = new Image();
+        img.onload = () => resolve([key, img]);
+        img.onerror = () => resolve([key, null]);
+        img.src = `./assets/${{key}}.svg`;
+      }});
+    }}
+    Promise.all(assetKeys.map(loadAsset)).then((rows) => {{
+      rows.forEach(([k, v]) => {{ assets[k] = v; }});
+      window.__studioAssets.ready = true;
+    }});
+    window.__studioAssets = {{
+      images: assets,
+      ready: false,
+      draw(ctx, key, x, y, w, h, fallback) {{
+        const img = this.images[key];
+        if (img) {{
+          ctx.drawImage(img, x, y, w, h);
+          return;
+        }}
+        if (typeof fallback === 'function') fallback();
+      }},
+    }};
+
     const btn = document.getElementById('audioToggle');
     if (btn) btn.addEventListener('click', () => {{
       const on = window.__studioEngine.audio.toggle();
@@ -2592,6 +2646,7 @@ ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+'
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
 const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}},drawOverlay(){{}}}};
+const A=window.__studioAssets||{{draw:(_c,_k,_x,_y,_w,_h,f)=>{{if(f)f();}}}};
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const metaKey='studio_meta_runner_v2';
 const meta=(()=>{{try{{return JSON.parse(localStorage.getItem(metaKey)||'{{}}')}}catch(_e){{return {{}};}}}})();
@@ -2606,10 +2661,10 @@ function ensureBoss(elapsed){{if(elapsed<{duration}*0.65||boss)return;boss={{x:c
 function drawParallax(){{ctx.fillStyle='#0f1a34';ctx.fillRect(0,0,cvs.width,cvs.height);for(const s of bgStars){{s.x-=s.s*0.36;s.y+=Math.sin((tick+s.x)*0.002)*0.12;if(s.x<0)s.x=cvs.width;ctx.fillStyle='rgba(170,210,255,0.33)';ctx.fillRect(s.x,s.y,s.s,s.s);}}
 ctx.fillStyle='#1c2f53';ctx.fillRect(0,330,cvs.width,110);ctx.fillStyle='#223a66';ctx.fillRect(0,378,cvs.width,62);}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawParallax();
-ctx.fillStyle='#7dd3ff';ctx.fillRect(px,y,pw,ph);ctx.fillStyle='#9af0c2';ctx.fillRect(px+6,y+10,18,12);
-ctx.fillStyle='#ff7f8e';for(const o of obs){{const top=o.fly?260-o.h:380-o.h;ctx.fillRect(o.x,top,o.w,o.h);}}
-ctx.fillStyle='#ffd56c';for(const o of orbs){{ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();}}
-if(boss){{ctx.fillStyle='#ff4d7b';ctx.fillRect(boss.x,boss.y-boss.h,boss.w,boss.h);ctx.fillStyle='#fff';ctx.fillRect(boss.x+16,boss.y-boss.h+22,8,8);ctx.fillRect(boss.x+48,boss.y-boss.h+22,8,8);
+A.draw(ctx,'player',px,y,pw,ph,()=>{{ctx.fillStyle='#7dd3ff';ctx.fillRect(px,y,pw,ph);ctx.fillStyle='#9af0c2';ctx.fillRect(px+6,y+10,18,12);}});
+for(const o of obs){{const top=o.fly?260-o.h:380-o.h;A.draw(ctx,'enemy',o.x,top,o.w,o.h,()=>{{ctx.fillStyle='#ff7f8e';ctx.fillRect(o.x,top,o.w,o.h);}});}}
+for(const o of orbs){{A.draw(ctx,'orb',o.x-o.r,o.y-o.r,o.r*2,o.r*2,()=>{{ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fillStyle='#ffd56c';ctx.fill();}});}}
+if(boss){{A.draw(ctx,'boss',boss.x,boss.y-boss.h,boss.w,boss.h,()=>{{ctx.fillStyle='#ff4d7b';ctx.fillRect(boss.x,boss.y-boss.h,boss.w,boss.h);ctx.fillStyle='#fff';ctx.fillRect(boss.x+16,boss.y-boss.h+22,8,8);ctx.fillRect(boss.x+48,boss.y-boss.h+22,8,8);}});
 ctx.fillStyle='rgba(8,14,26,0.54)';ctx.fillRect(590,16,210,12);ctx.fillStyle='#ff7f9f';ctx.fillRect(590,16,210*Math.max(0,boss.hp)/(5+Math.floor({difficulty}/2)),12);ctx.strokeStyle='rgba(255,180,200,0.8)';ctx.strokeRect(590,16,210,12);}}
 ctx.fillStyle='rgba(8,14,26,0.5)';ctx.fillRect(12,398,220,20);ctx.fillStyle='#6be0ff';ctx.fillRect(12,398,Math.max(0,Math.min(220,stamina*2.2)),20);ctx.strokeStyle='rgba(130,170,255,0.75)';ctx.strokeRect(12,398,220,20);
 E.drawOverlay(ctx,cvs.width,cvs.height);}}
@@ -2641,6 +2696,7 @@ ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' 
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
 const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}},drawOverlay(){{}}}};
+const A=window.__studioAssets||{{draw:(_c,_k,_x,_y,_w,_h,f)=>{{if(f)f();}}}};
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const metaKey='studio_meta_dodge_v2';
 const meta=(()=>{{try{{return JSON.parse(localStorage.getItem(metaKey)||'{{}}')}}catch(_e){{return {{}};}}}})();
@@ -2658,11 +2714,11 @@ function ensureBoss(elapsed){{if(elapsed<{duration}*0.62||boss)return;boss={{x:4
 function drawBg(){{const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#101a31');g.addColorStop(1,'#0a1226');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
 for(let i=0;i<22;i++){{const y=(i*27+(tick*0.38)%27)%cvs.height;ctx.fillStyle='rgba(96,132,190,0.12)';ctx.fillRect(0,y,cvs.width,1);}}
 for(const r of rings){{ctx.beginPath();ctx.arc(r.x,r.y,r.radius,0,Math.PI*2);ctx.strokeStyle='rgba(122,240,255,'+(r.life/40)+')';ctx.lineWidth=2;ctx.stroke();r.radius+=1.7;r.life-=1;}}rings=rings.filter(r=>r.life>0);}}
-function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawBg();for(const b of balls){{ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle=b.kind==='homing'?'#ff5f7a':'#ff8b8b';ctx.fill();}}
-for(const it of pickups){{ctx.beginPath();ctx.arc(it.x,it.y,it.r,0,Math.PI*2);ctx.fillStyle=it.kind==='shield'?'#6bc3ff':'#ffe07f';ctx.fill();}}
-if(boss){{ctx.beginPath();ctx.arc(boss.x,boss.y,boss.r,0,Math.PI*2);ctx.fillStyle='#ff4d7b';ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(boss.x-10,boss.y-4,6,6);ctx.fillRect(boss.x+4,boss.y-4,6,6);
+function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawBg();for(const b of balls){{A.draw(ctx,'enemy',b.x-b.r,b.y-b.r,b.r*2,b.r*2,()=>{{ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle=b.kind==='homing'?'#ff5f7a':'#ff8b8b';ctx.fill();}});}}
+for(const it of pickups){{A.draw(ctx,'orb',it.x-it.r,it.y-it.r,it.r*2,it.r*2,()=>{{ctx.beginPath();ctx.arc(it.x,it.y,it.r,0,Math.PI*2);ctx.fillStyle=it.kind==='shield'?'#6bc3ff':'#ffe07f';ctx.fill();}});}}
+if(boss){{A.draw(ctx,'boss',boss.x-boss.r,boss.y-boss.r,boss.r*2,boss.r*2,()=>{{ctx.beginPath();ctx.arc(boss.x,boss.y,boss.r,0,Math.PI*2);ctx.fillStyle='#ff4d7b';ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(boss.x-10,boss.y-4,6,6);ctx.fillRect(boss.x+4,boss.y-4,6,6);}});
 ctx.fillStyle='rgba(8,14,26,0.54)';ctx.fillRect(590,16,210,12);ctx.fillStyle='#ff7f9f';ctx.fillRect(590,16,210*Math.max(0,boss.hp)/(8+Math.floor({difficulty}/2)),12);ctx.strokeStyle='rgba(255,180,200,0.8)';ctx.strokeRect(590,16,210,12);}}
-ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=p.shield>0?'#8fe7ff':'#75d0a2';ctx.fill();if(p.shield>0){{ctx.beginPath();ctx.arc(p.x,p.y,p.r+7,0,Math.PI*2);ctx.strokeStyle='rgba(120,220,255,0.75)';ctx.lineWidth=2;ctx.stroke();}}
+A.draw(ctx,'player',p.x-p.r,p.y-p.r,p.r*2,p.r*2,()=>{{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=p.shield>0?'#8fe7ff':'#75d0a2';ctx.fill();}});if(p.shield>0){{ctx.beginPath();ctx.arc(p.x,p.y,p.r+7,0,Math.PI*2);ctx.strokeStyle='rgba(120,220,255,0.75)';ctx.lineWidth=2;ctx.stroke();}}
 E.drawOverlay(ctx,cvs.width,cvs.height);}}
 window.addEventListener('keydown',e=>{{keys[e.key]=true;if((e.key==='Shift'||e.key==='ShiftLeft')&&p.dashCd<=0){{const dx=(keys['ArrowRight']?1:0)-(keys['ArrowLeft']?1:0);const dy=(keys['ArrowDown']?1:0)-(keys['ArrowUp']?1:0);p.x+=dx*84;p.y+=dy*84;p.dashCd=84;E.audio.success();rings.push({{x:p.x,y:p.y,radius:8,life:30}});}}}});
 window.addEventListener('keyup',e=>{{keys[e.key]=false;}});
@@ -2721,13 +2777,18 @@ ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+'
         safe_id = gp.id.lower().replace(" ", "_")
         static_root = Path(os.getenv("STUDIO_STATIC_DIR", "static"))
         out_dir = static_root / "generated" / safe_id
+        asset_dir = out_dir / "assets"
         out_dir.mkdir(parents=True, exist_ok=True)
+        asset_dir.mkdir(parents=True, exist_ok=True)
 
         blueprint = self._build_game_blueprint(gp)
         index_html = self._render_game_html(gp, blueprint)
         game_js = self._render_game_js(blueprint)
+        asset_files = self._render_asset_files(blueprint)
         (out_dir / "index.html").write_text(index_html, encoding="utf-8")
         (out_dir / "game.js").write_text(game_js, encoding="utf-8")
+        for name, content in asset_files.items():
+            (asset_dir / name).write_text(content, encoding="utf-8")
 
         gp.demo_build_count = int(gp.demo_build_count) + 1
         gp.demo_url = f"/static/generated/{safe_id}/index.html"
@@ -2745,7 +2806,7 @@ ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+'
                 "demo_url": gp.demo_url,
                 "build_count": gp.demo_build_count,
                 "blueprint": blueprint,
-                "files": ["index.html", "game.js"],
+                "files": ["index.html", "game.js", "assets/player.svg", "assets/enemy.svg", "assets/orb.svg", "assets/boss.svg"],
             },
         )
         self.add_event(
