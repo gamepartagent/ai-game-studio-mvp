@@ -651,16 +651,32 @@ class ToolExecutor:
 
             if apr.status == "Approved" and not rel.final_confirmed and self.store.can_confirm_project_release(gp.id):
                 quality = self.store.evaluate_project_quality(gp.id)
+                originality = self.store.evaluate_project_originality(gp.id)
                 kpi_gate = self.store.release_kpi_gate(since_minutes=180)
                 target_builds = 4
-                if gp.demo_build_count >= target_builds and quality >= 78.0 and kpi_gate["passed"]:
+                originality_ok = (
+                    float(originality.get("originality_score", 0.0)) >= 65.0
+                    and float(originality.get("imitation_risk", 100.0)) <= 40.0
+                )
+                if gp.demo_build_count >= target_builds and quality >= 78.0 and kpi_gate["passed"] and originality_ok:
                     self.store.submit_project_for_human_approval(
                         gp.id,
                         reason=(
                             f"Auto QA+KPI pass complete (quality={quality:.1f}, "
-                            f"builds={gp.demo_build_count}, kpi={kpi_gate['score']:.1f})"
+                            f"builds={gp.demo_build_count}, kpi={kpi_gate['score']:.1f}, "
+                            f"orig={originality.get('originality_score', 0.0):.1f})"
                         ),
                         actor_id="ceo",
+                    )
+                    await self._emit_latest_event()
+                elif gp.demo_build_count >= target_builds and quality >= 78.0 and not originality_ok:
+                    self.store.add_event(
+                        type="game_project.submit_blocked_originality",
+                        actor_id="ceo",
+                        summary=f"{gp.id} submission blocked by originality gate",
+                        refs={"approval_id": apr.id},
+                        payload={"project_id": gp.id, "originality": originality},
+                        source="orchestrator",
                     )
                     await self._emit_latest_event()
                 elif gp.demo_build_count >= target_builds and quality >= 78.0:

@@ -7,6 +7,7 @@ from collections import deque
 import os
 import random
 from pathlib import Path
+import re
 
 from .artifact_repo import ArtifactRepo
 from .persistence import SnapshotSQLite
@@ -353,6 +354,9 @@ class GameProject:
     demo_build_count: int = 0
     game_blueprint: Dict[str, Any] = field(default_factory=dict)
     quality_score: float = 0.0
+    originality_score: float = 0.0
+    imitation_risk: float = 0.0
+    originality_notes: str = ""
     submission_reason: str = ""
     submitted_for_human: bool = False
     submitted_at: Optional[str] = None
@@ -1540,6 +1544,83 @@ class Store:
         return deployed
 
     # ---------- Trend / Game pipeline ----------
+    def _text_tokens(self, text: str) -> set[str]:
+        words = re.findall(r"[a-zA-Z0-9가-힣]{2,}", str(text or "").lower())
+        stop = {
+            "game",
+            "project",
+            "sprint",
+            "prototype",
+            "release",
+            "test",
+            "build",
+            "the",
+            "and",
+            "for",
+            "with",
+            "from",
+        }
+        return {w for w in words if w not in stop}
+
+    def _jaccard(self, a: set[str], b: set[str]) -> float:
+        if not a or not b:
+            return 0.0
+        inter = len(a & b)
+        union = len(a | b)
+        if union <= 0:
+            return 0.0
+        return float(inter) / float(union)
+
+    def evaluate_project_originality(self, project_id: str) -> Dict[str, Any]:
+        if project_id not in self.game_projects:
+            return {"originality_score": 0.0, "imitation_risk": 100.0, "reason": "project_not_found"}
+        gp = self.game_projects[project_id]
+        src_tokens = self._text_tokens(f"{gp.title} {gp.genre} {gp.concept}")
+        src_mode = str((gp.game_blueprint or {}).get("mode_base") or self._infer_demo_mode(gp)).lower()
+
+        max_sim = 0.0
+        near_id = ""
+        same_genre_recent = 0
+        for other in self.game_projects.values():
+            if other.id == gp.id:
+                continue
+            other_tokens = self._text_tokens(f"{other.title} {other.genre} {other.concept}")
+            sim = self._jaccard(src_tokens, other_tokens)
+            if sim > max_sim:
+                max_sim = sim
+                near_id = other.id
+            if other.genre == gp.genre and other.id != gp.id:
+                same_genre_recent += 1
+
+        trend_bonus = min(12.0, float(len(set(gp.trend_ids or []))) * 4.0)
+        mode_bonus = 6.0 if str((gp.game_blueprint or {}).get("mode_extension", "")).strip() else 2.0
+        mode_penalty = 0.0
+        for other in self.game_projects.values():
+            if other.id == gp.id:
+                continue
+            other_mode = str((other.game_blueprint or {}).get("mode_base") or self._infer_demo_mode(other)).lower()
+            if other_mode == src_mode:
+                mode_penalty += 1.5
+        similarity_penalty = max_sim * 65.0
+        genre_penalty = min(16.0, max(0.0, float(same_genre_recent - 2) * 2.5))
+        score = 78.0 + trend_bonus + mode_bonus - similarity_penalty - mode_penalty - genre_penalty
+        originality_score = round(max(1.0, min(100.0, score)), 1)
+        imitation_risk = round(max(0.0, min(100.0, max_sim * 100.0 + max(0.0, mode_penalty * 2.0))), 1)
+        reason = f"sim={max_sim:.2f}, near={near_id or '-'}, trend_bonus={trend_bonus:.1f}, mode_penalty={mode_penalty:.1f}"
+
+        gp.originality_score = originality_score
+        gp.imitation_risk = imitation_risk
+        gp.originality_notes = reason
+        gp.updated_at = now_iso()
+        return {
+            "project_id": gp.id,
+            "originality_score": originality_score,
+            "imitation_risk": imitation_risk,
+            "reason": reason,
+            "nearest_project_id": near_id,
+            "max_similarity": round(max_sim, 3),
+        }
+
     def _normalize_genre(self, raw: str) -> str:
         s = str(raw or "").strip().lower()
         if not s:
@@ -1620,12 +1701,13 @@ class Store:
             meeting_ids=[x for x in (meeting_ids or []) if x],
         )
         self.game_projects[gp.id] = gp
+        originality = self.evaluate_project_originality(gp.id)
         self.add_event(
             type="game_project.created",
             actor_id=created_by,
             summary=f"{gp.id} created: {gp.title}",
             refs={},
-            payload={"project": self.game_project_to_dict(gp)},
+            payload={"project": self.game_project_to_dict(gp), "originality": originality},
             source="orchestrator",
         )
         return gp
@@ -1647,6 +1729,7 @@ class Store:
 
     def evaluate_project_quality(self, project_id: str) -> float:
         gp = self.game_projects[project_id]
+        originality = self.evaluate_project_originality(project_id)
         health = self.project_artifact_health(project_id)
         # simple deterministic quality rubric for autonomous filtering
         score = 0.0
@@ -1662,6 +1745,10 @@ class Store:
             score += 8.0
         if health["git_reports"] > 0:
             score += 7.0
+        if float(originality.get("originality_score", 0.0)) >= 70.0:
+            score += 6.0
+        if float(originality.get("imitation_risk", 0.0)) >= 55.0:
+            score -= 8.0
         if self.can_confirm_project_release(project_id):
             score += 15.0
         gp.quality_score = round(min(100.0, score), 1)
@@ -1718,6 +1805,17 @@ class Store:
         released = [p for p in projects if p.status == "Released"]
         release_ready = [p for p in projects if p.release_id and self.can_confirm_project_release(p.id)]
         avg_quality = (sum(_estimated_quality(p) for p in projects) / float(total_projects) if total_projects else 0.0)
+        avg_originality = (
+            sum(float(self.evaluate_project_originality(p.id).get("originality_score", 0.0)) for p in projects)
+            / float(total_projects)
+            if total_projects
+            else 0.0
+        )
+        low_risk_ready = [
+            p
+            for p in projects
+            if float(self.evaluate_project_originality(p.id).get("imitation_risk", 100.0)) <= 40.0
+        ]
 
         # Infra score: orchestration quality for an autonomous studio pipeline.
         infra_score = (
@@ -1753,6 +1851,8 @@ class Store:
                 "experiments_total": len(self.experiments),
                 "kpi_events_total": len(self.kpi_events),
                 "average_quality": round(avg_quality, 1),
+                "average_originality": round(avg_originality, 1),
+                "low_imitation_risk_projects": len(low_risk_ready),
             },
         }
 
@@ -1942,6 +2042,17 @@ class Store:
             return None
         done = [tid for tid in gp.task_ids if tid in self.tasks and self.tasks[tid].status == "Done"]
         if len(done) < max(2, len(gp.task_ids) - 1):
+            return None
+        originality = self.evaluate_project_originality(project_id)
+        if float(originality.get("originality_score", 0.0)) < 60.0 or float(originality.get("imitation_risk", 0.0)) > 45.0:
+            self.add_event(
+                type="game_project.release_blocked_originality",
+                actor_id=requested_by,
+                summary=f"{gp.id} release blocked by originality gate",
+                refs={},
+                payload={"project_id": gp.id, "originality": originality},
+                source="orchestrator",
+            )
             return None
         version = f"1.0.{_extract_id_num(gp.id):02d}"
         rel = self.create_release_candidate(
