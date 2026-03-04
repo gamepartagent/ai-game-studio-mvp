@@ -2413,6 +2413,22 @@ class Store:
     }}
     function defaultMission(mode) {{
       const pools = {{
+        aim: [
+          {{ id:'aim_score_240', kind:'score', target:240, reward:10, label:'점수 240점 달성' }},
+          {{ id:'aim_combo_16', kind:'combo', target:16, reward:9, label:'콤보 16 달성' }},
+        ],
+        clicker: [
+          {{ id:'clicker_score_260', kind:'score', target:260, reward:10, label:'점수 260점 달성' }},
+          {{ id:'clicker_combo_20', kind:'combo', target:20, reward:9, label:'콤보 20 달성' }},
+        ],
+        memory: [
+          {{ id:'memory_score_140', kind:'score', target:140, reward:10, label:'점수 140점 달성' }},
+          {{ id:'memory_combo_10', kind:'combo', target:10, reward:8, label:'연속 정답 10회' }},
+        ],
+        rhythm: [
+          {{ id:'rhythm_score_180', kind:'score', target:180, reward:10, label:'점수 180점 달성' }},
+          {{ id:'rhythm_combo_14', kind:'combo', target:14, reward:9, label:'콤보 14 달성' }},
+        ],
         runner: [
           {{ id:'runner_score_260', kind:'score', target:260, reward:12, label:'점수 260점 달성' }},
           {{ id:'runner_combo_18', kind:'combo', target:18, reward:10, label:'최고 콤보 18 달성' }},
@@ -2514,52 +2530,64 @@ class Store:
         if mode == "clicker":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
-let score=0,t={duration},running=true,multi=1,target={{x:410,y:220,r:44,vx:0,vy:0}},pulse=0,combo=0;
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
+const mission=M.getMission('clicker');M.writeMissionHint('clicker');
+let score=0,t={duration},running=true,multi=1,target={{x:410,y:220,r:44,vx:0,vy:0}},pulse=0,combo=0,bestCombo=0;
 function spawn(){{target.r=24+Math.random()*30;target.x=target.r+Math.random()*(cvs.width-target.r*2);target.y=target.r+Math.random()*(cvs.height-target.r*2);
 target.vx=({tier}>=3?(-1+Math.random()*2)*(1+Math.random()*1.6):0);target.vy=({tier}>=3?(-1+Math.random()*2)*(1+Math.random()*1.6):0);}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#101a31';ctx.fillRect(0,0,cvs.width,cvs.height);
 ctx.beginPath();ctx.arc(target.x,target.y,target.r+pulse,0,Math.PI*2);ctx.fillStyle='#ff7b7b';ctx.fill();
 ctx.beginPath();ctx.arc(target.x,target.y,target.r*0.58,0,Math.PI*2);ctx.fillStyle='#ffe08a';ctx.fill();
-ctx.fillStyle='#cde3ff';ctx.font='16px Segoe UI';ctx.fillText('x'+multi.toFixed(1)+' combo '+combo,14,26);pulse=Math.max(0,pulse-0.4);}}
+ctx.fillStyle='#cde3ff';ctx.font='16px Segoe UI';ctx.fillText('x'+multi.toFixed(1)+' combo '+combo,14,26);ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,46);pulse=Math.max(0,pulse-0.4);}}
 cvs.addEventListener('click',e=>{{if(!running)return;const r=cvs.getBoundingClientRect();const x=(e.clientX-r.left)*(cvs.width/r.width);const y=(e.clientY-r.top)*(cvs.height/r.height);
-const hit=Math.hypot(x-target.x,y-target.y)<=target.r;if(hit){{combo+=1;score+=Math.round((55-target.r)*multi)+(combo*{max(1, tier-1)});multi=Math.min(5,multi+0.08*{difficulty});pulse=6;spawn();}}
+const hit=Math.hypot(x-target.x,y-target.y)<=target.r;if(hit){{combo+=1;bestCombo=Math.max(bestCombo,combo);score+=Math.round((55-target.r)*multi)+(combo*{max(1, tier-1)});multi=Math.min(5,multi+0.08*{difficulty});pulse=6;spawn();}}
 else{{combo=0;multi=Math.max(1,multi-0.15);}}scoreEl.textContent=String(score);}});
 spawn();(function loop(){{if({tier}>=3){{target.x+=target.vx;target.y+=target.vy;if(target.x<target.r||target.x>cvs.width-target.r)target.vx*=-1;if(target.y<target.r||target.y>cvs.height-target.r)target.vy*=-1;}}
 draw();if(running)requestAnimationFrame(loop);}})();
 const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0){{running=false;clearInterval(timer);
+const reward=M.resolveMission('clicker',{{score:score,combo:bestCombo}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 36px Segoe UI';
-ctx.fillText('Clicker End',cvs.width/2-105,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);}}}},1000);"""
+ctx.fillText('Clicker End',cvs.width/2-105,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('clicker'),cvs.width/2-170,cvs.height/2+54);M.writeMissionHint('clicker');}}}},1000);"""
         if mode == "memory":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
-let running=true,t={duration},score=0,shown=-1;const cardN=({tier}>=3?6:4);const seq=[...Array(cardN).keys()].sort(()=>Math.random()-0.5);
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
+const mission=M.getMission('memory');M.writeMissionHint('memory');
+let running=true,t={duration},score=0,shown=-1,streak=0,bestStreak=0;const cardN=({tier}>=3?6:4);const seq=[...Array(cardN).keys()].sort(()=>Math.random()-0.5);
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#111b31';ctx.fillRect(0,0,cvs.width,cvs.height);
 for(let i=0;i<cardN;i++){{const x=80+i*115,y=170,w=96,h=90;ctx.fillStyle=(shown===i)?'#ffd166':'#344e7b';ctx.fillRect(x,y,w,h);ctx.strokeStyle='#8ea6c9';ctx.strokeRect(x,y,w,h);ctx.fillStyle='#cde3ff';ctx.fillText(String(i+1),x+42,y+54);}}
-ctx.fillStyle='#cde3ff';ctx.font='18px Segoe UI';ctx.fillText('순서 카드 입력 1~'+cardN,280,90);}}
+ctx.fillStyle='#cde3ff';ctx.font='18px Segoe UI';ctx.fillText('순서 카드 입력 1~'+cardN,280,90);ctx.font='14px Segoe UI';ctx.fillText('미션 '+(mission.kind==='combo'?bestStreak:score)+'/'+mission.target,280,114);}}
 window.addEventListener('keydown',e=>{{if(!running)return;const n=parseInt(e.key,10)-1;if(Number.isNaN(n)||n<0||n>=cardN)return;
-if(n===seq[0]){{score+=10;seq.push(seq.shift());}}else{{score=Math.max(0,score-4);}}scoreEl.textContent=String(score);}});
+if(n===seq[0]){{score+=10;streak+=1;bestStreak=Math.max(bestStreak,streak);seq.push(seq.shift());}}else{{streak=0;score=Math.max(0,score-4);}}scoreEl.textContent=String(score);}});
 (function loop(){{draw();if(running)requestAnimationFrame(loop);}})();
 const flash=setInterval(()=>{{shown=Math.floor(Math.random()*cardN);setTimeout(()=>{{shown=-1;}},420);}},(variant==='sequence_match'?1050:1400));
 const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0){{running=false;clearInterval(timer);clearInterval(flash);
+const reward=M.resolveMission('memory',{{score:score,combo:bestStreak}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
-ctx.fillText('Memory End',cvs.width/2-98,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);}}}},1000);"""
+ctx.fillText('Memory End',cvs.width/2-98,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('memory'),cvs.width/2-170,cvs.height/2+52);M.writeMissionHint('memory');}}}},1000);"""
         if mode == "rhythm":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
-let running=true,t={duration},score=0;const laneX=[160,290,420,550,680],use5=({tier}>=3&&'{variant}'==='burst_tap'),notes=[];let beat=0;
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
+const mission=M.getMission('rhythm');M.writeMissionHint('rhythm');
+let running=true,t={duration},score=0,combo=0,bestCombo=0;const laneX=[160,290,420,550,680],use5=({tier}>=3&&'{variant}'==='burst_tap'),notes=[];let beat=0;
 function spawn(){{const lane=Math.floor(Math.random()*4);notes.push({{lane,y:-20,speed:3+Math.random()*{1+difficulty*0.4}}});}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#0f1730';ctx.fillRect(0,0,cvs.width,cvs.height);
 const lanes=(use5?laneX:laneX.slice(0,4));for(const x of lanes){{ctx.fillStyle='#213354';ctx.fillRect(x-28,30,56,340);}}ctx.fillStyle='#7aa2ff';ctx.fillRect(120,360,580,10);
-for(const n of notes){{ctx.beginPath();ctx.arc(laneX[n.lane],n.y,14,0,Math.PI*2);ctx.fillStyle='#ff9f7a';ctx.fill();}}}}
+for(const n of notes){{ctx.beginPath();ctx.arc(laneX[n.lane],n.y,14,0,Math.PI*2);ctx.fillStyle='#ff9f7a';ctx.fill();}}ctx.fillStyle='#cde3ff';ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,24);}}
 window.addEventListener('keydown',e=>{{if(!running)return;const map=(use5?{{'a':0,'s':1,'d':2,'f':3,'g':4}}:{{'a':0,'s':1,'d':2,'f':3}});const lane=map[(e.key||'').toLowerCase()];if(lane===undefined)return;
 const cand=notes.filter(n=>n.lane===lane);if(!cand.length)return;const n=cand.reduce((p,c)=>Math.abs(c.y-360)<Math.abs(p.y-360)?c:p);
-const dist=Math.abs(n.y-360);if(dist<26){{score+=Math.max(3,20-dist);notes.splice(notes.indexOf(n),1);}}else score=Math.max(0,score-4);scoreEl.textContent=String(score);}});
+const dist=Math.abs(n.y-360);if(dist<26){{combo+=1;bestCombo=Math.max(bestCombo,combo);score+=Math.max(3,20-dist)+Math.floor(combo/3);notes.splice(notes.indexOf(n),1);}}else{{combo=0;score=Math.max(0,score-4);}}scoreEl.textContent=String(score);}});
 function step(){{if(!running)return;beat++;if(beat%(use5?14:18)===0){{const laneMax=(use5?5:4);const lane=Math.floor(Math.random()*laneMax);notes.push({{lane,y:-20,speed:3+Math.random()*{1+difficulty*0.45}}});}}
-for(const n of notes)n.y+=n.speed;for(const n of notes){{if(n.y>390)score=Math.max(0,score-2);}}
+for(const n of notes)n.y+=n.speed;for(const n of notes){{if(n.y>390){{combo=0;score=Math.max(0,score-2);}}}}
 for(let i=notes.length-1;i>=0;i--)if(notes[i].y>430)notes.splice(i,1);scoreEl.textContent=String(score);draw();requestAnimationFrame(step);}}
 step();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0){{running=false;clearInterval(timer);
+const reward=M.resolveMission('rhythm',{{score:score,combo:bestCombo}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
-ctx.fillText('Rhythm End',cvs.width/2-92,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);}}}},1000);"""
+ctx.fillText('Rhythm End',cvs.width/2-92,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('rhythm'),cvs.width/2-170,cvs.height/2+52);M.writeMissionHint('rhythm');}}}},1000);"""
         if mode == "runner":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
@@ -2664,25 +2692,29 @@ window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')locati
         # default aim
         return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
-let score=0,t={duration},target={{x:180,y:150,r:24,vx:0,vy:0}},target2={{x:640,y:180,r:20,vx:0,vy:0}},running=true,combo=0;
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
+const mission=M.getMission('aim');M.writeMissionHint('aim');
+let score=0,t={duration},target={{x:180,y:150,r:24,vx:0,vy:0}},target2={{x:640,y:180,r:20,vx:0,vy:0}},running=true,combo=0,bestCombo=0;
 function spawn(main=true){{const r=14+Math.random()*({12 + difficulty * 2});const tx={{x:r+Math.random()*(cvs.width-r*2),y:r+Math.random()*(cvs.height-r*2),r,vx:(-1+Math.random()*2)*(0.6+0.2*{tier}),vy:(-1+Math.random()*2)*(0.6+0.2*{tier})}};
 if(main)target=tx;else target2=tx;}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#1d2b4b');g.addColorStop(1,'#0f172b');
 ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);ctx.beginPath();ctx.arc(target.x,target.y,target.r,0,Math.PI*2);ctx.fillStyle='#ff6b6b';ctx.fill();
 ctx.beginPath();ctx.arc(target.x,target.y,target.r*0.55,0,Math.PI*2);ctx.fillStyle='#ffd166';ctx.fill();ctx.beginPath();ctx.arc(target.x,target.y,target.r*0.2,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
 if('{variant}'==='multi_target'||{tier}>=3){{ctx.beginPath();ctx.arc(target2.x,target2.y,target2.r,0,Math.PI*2);ctx.fillStyle='#7ac7ff';ctx.fill();}}
-ctx.fillStyle='#d9eaff';ctx.fillText('combo '+combo,14,24);}}
+ctx.fillStyle='#d9eaff';ctx.fillText('combo '+combo,14,24);ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,44);}}
 function loop(){{draw();if(running)requestAnimationFrame(loop);}}
 cvs.addEventListener('click',e=>{{if(!running)return;const r=cvs.getBoundingClientRect();const x=(e.clientX-r.left)*(cvs.width/r.width);const y=(e.clientY-r.top)*(cvs.height/r.height);
-let hit=false;if(Math.hypot(x-target.x,y-target.y)<=target.r){{score+=Math.max(1,Math.round(48-target.r))+combo;combo+=1;spawn(true);hit=true;}}
-if((('{variant}'==='multi_target'||{tier}>=3))&&Math.hypot(x-target2.x,y-target2.y)<=target2.r){{score+=Math.max(1,Math.round(38-target2.r))+combo;combo+=1;spawn(false);hit=true;}}
+let hit=false;if(Math.hypot(x-target.x,y-target.y)<=target.r){{score+=Math.max(1,Math.round(48-target.r))+combo;combo+=1;bestCombo=Math.max(bestCombo,combo);spawn(true);hit=true;}}
+if((('{variant}'==='multi_target'||{tier}>=3))&&Math.hypot(x-target2.x,y-target2.y)<=target2.r){{score+=Math.max(1,Math.round(38-target2.r))+combo;combo+=1;bestCombo=Math.max(bestCombo,combo);spawn(false);hit=true;}}
 if(!hit)combo=0;scoreEl.textContent=String(score);}});
 spawn(true);spawn(false);loop();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));
 target.x+=target.vx;target.y+=target.vy;if(target.x<target.r||target.x>cvs.width-target.r)target.vx*=-1;if(target.y<target.r||target.y>cvs.height-target.r)target.vy*=-1;
 target2.x+=target2.vx;target2.y+=target2.vy;if(target2.x<target2.r||target2.x>cvs.width-target2.r)target2.vx*=-1;if(target2.y<target2.r||target2.y>cvs.height-target2.r)target2.vy*=-1;
 if(t<=0){{running=false;clearInterval(timer);
+const reward=M.resolveMission('aim',{{score:score,combo:bestCombo}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 38px Segoe UI';
-ctx.fillText('Time Up',cvs.width/2-90,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);}}}},1000);"""
+ctx.fillText('Time Up',cvs.width/2-90,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+54);M.writeMissionHint('aim');}}}},1000);"""
 
     def generate_project_demo(self, project_id: str, actor_id: str = "dev_a") -> Dict[str, Any]:
         gp = self.game_projects[project_id]
