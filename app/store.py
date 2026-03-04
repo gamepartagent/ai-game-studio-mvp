@@ -2262,9 +2262,12 @@ class Store:
     </div>
     <canvas id="game" width="820" height="440"></canvas>
     <div class="hint">{gp.concept or "Auto-generated playable prototype by AI studio."}</div>
+    <div class="hint" id="missionHint">Mission: loading...</div>
   </div>
   <script>
   (() => {{
+    const PROJECT_ID = '{gp.id}';
+    const MODE_BASE = '{base_mode}';
     const state = {{
       audioCtx: null,
       audioEnabled: false,
@@ -2390,6 +2393,106 @@ class Store:
       drawOverlay,
     }};
 
+    const META_KEY = 'studio_meta_core_v1';
+    function loadMeta() {{
+      try {{
+        return JSON.parse(localStorage.getItem(META_KEY) || '{{}}');
+      }} catch (_e) {{
+        return {{}};
+      }}
+    }}
+    function saveMeta(m) {{
+      localStorage.setItem(META_KEY, JSON.stringify(m || {{}}));
+    }}
+    function dayKey() {{
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      return `${{y}}-${{m}}-${{da}}`;
+    }}
+    function defaultMission(mode) {{
+      const pools = {{
+        runner: [
+          {{ id:'runner_score_260', kind:'score', target:260, reward:12, label:'점수 260점 달성' }},
+          {{ id:'runner_combo_18', kind:'combo', target:18, reward:10, label:'최고 콤보 18 달성' }},
+          {{ id:'runner_stage_3', kind:'stage', target:3, reward:8, label:'3스테이지 진입' }},
+        ],
+        dodge: [
+          {{ id:'dodge_score_320', kind:'score', target:320, reward:12, label:'점수 320점 달성' }},
+          {{ id:'dodge_wave_5', kind:'wave', target:5, reward:10, label:'웨이브 5 도달' }},
+          {{ id:'dodge_stage_3', kind:'stage', target:3, reward:8, label:'3스테이지 진입' }},
+        ],
+      }};
+      const arr = pools[mode] || [{{ id:'default_score', kind:'score', target:220, reward:8, label:'점수 220점 달성' }}];
+      const n = (PROJECT_ID.length + mode.length + dayKey().length) % arr.length;
+      return Object.assign({{}}, arr[n], {{ day: dayKey(), mode, completed: false }});
+    }}
+    window.__studioMeta = {{
+      getCoins(mode) {{
+        const m = loadMeta();
+        const c = (m.coins || {{}});
+        return Number(c[mode] || 0);
+      }},
+      addCoins(mode, amount) {{
+        const m = loadMeta();
+        m.coins = m.coins || {{}};
+        m.coins[mode] = Number(m.coins[mode] || 0) + Number(amount || 0);
+        saveMeta(m);
+        return Number(m.coins[mode] || 0);
+      }},
+      getMission(mode) {{
+        const m = loadMeta();
+        m.missions = m.missions || {{}};
+        const cur = m.missions[mode];
+        if (!cur || String(cur.day || '') !== dayKey()) {{
+          m.missions[mode] = defaultMission(mode);
+          saveMeta(m);
+        }}
+        return m.missions[mode];
+      }},
+      resolveMission(mode, stats) {{
+        const m = loadMeta();
+        m.missions = m.missions || {{}};
+        let cur = m.missions[mode];
+        if (!cur || String(cur.day || '') !== dayKey()) {{
+          cur = defaultMission(mode);
+          m.missions[mode] = cur;
+        }}
+        if (cur.completed) {{
+          saveMeta(m);
+          return 0;
+        }}
+        const s = stats || {{}};
+        const value = Number(
+          cur.kind === 'combo' ? (s.combo || 0) :
+          cur.kind === 'wave' ? (s.wave || 0) :
+          cur.kind === 'stage' ? (s.stage || 0) :
+          (s.score || 0)
+        );
+        if (value >= Number(cur.target || 0)) {{
+          cur.completed = true;
+          m.coins = m.coins || {{}};
+          m.coins[mode] = Number(m.coins[mode] || 0) + Number(cur.reward || 0);
+          m.missions[mode] = cur;
+          saveMeta(m);
+          return Number(cur.reward || 0);
+        }}
+        m.missions[mode] = cur;
+        saveMeta(m);
+        return 0;
+      }},
+      writeMissionHint(mode) {{
+        const el = document.getElementById('missionHint');
+        if (!el) return;
+        const mission = this.getMission(mode);
+        const coins = this.getCoins(mode);
+        const done = mission && mission.completed ? '완료' : '진행중';
+        el.textContent = `Mission[${{done}}]: ${{mission.label}} | 보상 ${{mission.reward}} 코인 | 보유 코인 ${{coins}}`;
+      }},
+    }};
+    window.__studioMeta.writeMissionHint(MODE_BASE);
+
     const btn = document.getElementById('audioToggle');
     if (btn) btn.addEventListener('click', () => {{
       const on = window.__studioEngine.audio.toggle();
@@ -2461,8 +2564,10 @@ ctx.fillText('Rhythm End',cvs.width/2-92,cvs.height/2-8);ctx.font='22px Segoe UI
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
 const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}},drawOverlay(){{}}}};
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const metaKey='studio_meta_runner_v2';
 const meta=(()=>{{try{{return JSON.parse(localStorage.getItem(metaKey)||'{{}}')}}catch(_e){{return {{}};}}}})();
+const mission=M.getMission('runner');M.writeMissionHint('runner');
 const metaLvl=Math.max(0,Number(meta.level||0));const speedBonus=Math.min(2.5,metaLvl*0.12);
 let running=true,t={duration},score=0,vy=0,y=332,onGround=true,speed={3 + difficulty}+speedBonus,tick=0,combo=0,bestCombo=0,stage=1;
 let stamina=100,dashCd=0;const px=92,pw=30,ph=46;let boss=null;
@@ -2493,20 +2598,25 @@ if(boss){{boss.tick++;boss.x=Math.max(520,boss.x-1.3-stage*0.2);if(boss.tick%120
 const hitBoss=(dashCd>0&&px+pw>boss.x&&px<boss.x+boss.w&&y+ph>boss.y-boss.h&&y<boss.y);if(hitBoss){{boss.hp--;score+=22;E.audio.success();E.vfx.burst(boss.x+boss.w*0.5,boss.y-boss.h*0.5,'#ff7f9f',1.6);dashCd=0;}}
 if(boss.hp<=0){{score+=160;boss=null;E.audio.success();for(let n=0;n<4;n++)E.vfx.burst(650+Math.random()*80,220+Math.random()*80,'#ffd56c',1.8);}}}}
 if(running)score+=1+Math.floor(combo/6)+stage;else combo=0;if(tick%45===0&&combo>0)combo--;scoreEl.textContent=String(score);
-E.hud.set({{wave:stage,hp:running?1:0,combo:bestCombo,note:boss?('BOSS HP '+boss.hp):('DashCD '+Math.max(0,Math.ceil(dashCd/6)))}});draw();requestAnimationFrame(step);}}
+const mNow=(mission.kind==='combo'?bestCombo:(mission.kind==='stage'?stage:score));
+E.hud.set({{wave:stage,hp:running?1:0,combo:bestCombo,note:boss?('BOSS HP '+boss.hp):(`미션 ${{mNow}}/${{mission.target}}`)}});draw();requestAnimationFrame(step);}}
 window.addEventListener('keydown',e=>{{if((e.key===' '||e.key==='ArrowUp')&&onGround){{vy=-14.8;onGround=false;E.audio.hit();}}
 if((e.key||'').toLowerCase()==='shift'&&dashCd<=0&&stamina>=26){{dashCd=30;stamina-=26;E.audio.success();}}}});
 cvs.addEventListener('click',()=>{{if(onGround){{vy=-14.8;onGround=false;E.audio.hit();}}}});
 step();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0||!running){{running=false;clearInterval(timer);
 const prevBest=Math.max(0,Number(meta.best||0));meta.best=Math.max(prevBest,score);if(score>=Math.max(120,prevBest*0.9))meta.level=metaLvl+1;localStorage.setItem(metaKey,JSON.stringify(meta));
+const reward=M.resolveMission('runner',{{score:score,combo:bestCombo,stage:stage}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
-ctx.fillText('Run End',cvs.width/2-86,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Stage: '+stage+' | Meta Lv: '+(meta.level||0),cvs.width/2-170,cvs.height/2+16);}}}},1000);"""
+ctx.fillText('Run End',cvs.width/2-86,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Stage: '+stage+' | Meta Lv: '+(meta.level||0),cvs.width/2-170,cvs.height/2+16);
+ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('runner'),cvs.width/2-190,cvs.height/2+42);M.writeMissionHint('runner');}}}},1000);"""
         if mode == "dodge":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
 const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}},drawOverlay(){{}}}};
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const metaKey='studio_meta_dodge_v2';
 const meta=(()=>{{try{{return JSON.parse(localStorage.getItem(metaKey)||'{{}}')}}catch(_e){{return {{}};}}}})();
+const mission=M.getMission('dodge');M.writeMissionHint('dodge');
 const metaLvl=Math.max(0,Number(meta.level||0));const bonusShield=Math.min(180,metaLvl*12);
 let running=true,t={duration},score=0,tick=0,wave=1,lastHit=0,stage=1;
 const p={{x:410,y:220,vx:0,vy:0,r:14,hp:4,shield:bonusShield,dashCd:0}};
@@ -2542,11 +2652,14 @@ for(const b of balls){{const dist=Math.hypot(p.x-b.x,p.y-b.y);if(dist<b.r+p.r){{
 else if(tick-lastHit>24){{p.hp--;lastHit=tick;score=Math.max(0,score-18);E.audio.alert();rings.push({{x:p.x,y:p.y,radius:6,life:34}});}}}} else if(dist<b.r+p.r+16){{score+=1;}}}}
 if(boss&&p.dashCd>0&&Math.hypot(p.x-boss.x,p.y-boss.y)<p.r+boss.r+10){{boss.hp--;score+=30;E.audio.success();E.vfx.burst(boss.x,boss.y,'#ff7f9f',1.6);p.dashCd=0;if(boss.hp<=0){{score+=190;boss=null;for(let n=0;n<6;n++)E.vfx.burst(410+Math.random()*120-60,110+Math.random()*80,'#ffd56c',1.9);}}}}
 if(p.shield>0)p.shield--;if(p.hp<=0)running=false;if(running)score+=1+Math.floor(wave*0.25)+stage;scoreEl.textContent=String(score);
-E.hud.set({{wave:wave,hp:p.hp,combo:Math.max(0,Math.floor(score/45)),note:boss?('BOSS HP '+boss.hp):(slowmo>0?'SLOW-MO':'Dash '+Math.max(0,Math.ceil(p.dashCd/6)))}});draw();requestAnimationFrame(step);}}
+const mNow=(mission.kind==='wave'?wave:(mission.kind==='stage'?stage:score));
+E.hud.set({{wave:wave,hp:p.hp,combo:Math.max(0,Math.floor(score/45)),note:boss?('BOSS HP '+boss.hp):(`미션 ${{mNow}}/${{mission.target}}`)}});draw();requestAnimationFrame(step);}}
 step();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0||!running){{running=false;clearInterval(timer);
 const prevBest=Math.max(0,Number(meta.best||0));meta.best=Math.max(prevBest,score);if(score>=Math.max(130,prevBest*0.9))meta.level=metaLvl+1;localStorage.setItem(metaKey,JSON.stringify(meta));
+const reward=M.resolveMission('dodge',{{score:score,wave:wave,stage:stage}});
 ctx.fillStyle='rgba(8,12,24,0.72)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 36px Segoe UI';
-ctx.fillText('Arena End',cvs.width/2-88,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Wave: '+wave+' | Meta Lv: '+(meta.level||0),cvs.width/2-158,cvs.height/2+18);}}}},1000);
+ctx.fillText('Arena End',cvs.width/2-88,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Wave: '+wave+' | Meta Lv: '+(meta.level||0),cvs.width/2-158,cvs.height/2+18);
+ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('dodge'),cvs.width/2-190,cvs.height/2+44);M.writeMissionHint('dodge');}}}},1000);
 window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
         # default aim
         return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
