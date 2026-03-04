@@ -1069,6 +1069,68 @@ class Store:
             "since_minutes": since_minutes,
         }
 
+    def monetization_summary(self, since_minutes: int = 1440, project_id: str = "") -> Dict[str, Any]:
+        rows = list(self.kpi_events)
+        cutoff = datetime.now(KST) - timedelta(minutes=max(1, int(since_minutes)))
+        pid = str(project_id or "").strip()
+
+        filtered: List[KPIEvent] = []
+        for e in rows:
+            try:
+                ts = datetime.fromisoformat(e.ts)
+            except Exception:
+                continue
+            if ts < cutoff:
+                continue
+            if pid and str((e.meta or {}).get("project_id", "")).strip() != pid:
+                continue
+            filtered.append(e)
+
+        impressions = 0
+        clicks = 0
+        revenue = 0.0
+        unique_users: set[str] = set()
+        by_slot: Dict[str, Dict[str, float]] = {}
+        for e in filtered:
+            et = str(e.event_type or "")
+            meta = e.meta or {}
+            slot = str(meta.get("slot", "unknown"))
+            row = by_slot.setdefault(slot, {"impressions": 0.0, "clicks": 0.0, "revenue": 0.0})
+            unique_users.add(str(e.user_id or "anon"))
+            if et in {"ad.impression", "monetization.ad_impression"}:
+                impressions += 1
+                row["impressions"] += 1
+            elif et in {"ad.click", "monetization.ad_click"}:
+                clicks += 1
+                row["clicks"] += 1
+            elif et in {"ad.revenue", "monetization.ad_revenue", "revenue"}:
+                v = float(e.value or 0.0)
+                revenue += v
+                row["revenue"] += v
+
+        ctr = (clicks / impressions) if impressions > 0 else 0.0
+        ecpm = ((revenue / impressions) * 1000.0) if impressions > 0 else 0.0
+        arpu = (revenue / len(unique_users)) if unique_users else 0.0
+        return {
+            "since_minutes": int(since_minutes),
+            "project_id": pid,
+            "impressions": impressions,
+            "clicks": clicks,
+            "ctr": round(ctr, 4),
+            "revenue_total": round(revenue, 4),
+            "ecpm": round(ecpm, 4),
+            "active_users": len(unique_users),
+            "arpu": round(arpu, 4),
+            "by_slot": {
+                k: {
+                    "impressions": int(v["impressions"]),
+                    "clicks": int(v["clicks"]),
+                    "revenue": round(float(v["revenue"]), 4),
+                }
+                for k, v in by_slot.items()
+            },
+        }
+
     def release_kpi_gate(self, since_minutes: int = 180, project_id: Optional[str] = None) -> Dict[str, Any]:
         rows = list(self.kpi_events)
         cutoff = datetime.now(KST) - timedelta(minutes=since_minutes)

@@ -12,6 +12,7 @@
   trend_signals: [],
   experiments: [],
   portal_catalog: null,
+  monetization_summary: null,
   mode_extensions: [],
   completion: null,
   project_kpi: null,
@@ -516,10 +517,21 @@ function renderPortalTab(){
   const el = $("tab-portal");
   if(!el) return;
   const games = (state.portal_catalog && state.portal_catalog.games) || [];
+  const ms = state.monetization_summary || null;
   el.innerHTML = `
     <div class="detail">
       <h3>게임 포털 (공개본)</h3>
       <div class="hint" style="margin-bottom:8px;">최종 승인 후 출시된 게임만 자동 등록됩니다.</div>
+      <div class="detail" style="margin-bottom:8px;">
+        <div class="kv">
+          <div>광고 노출</div><b>${esc(String(ms ? ms.impressions : 0))}</b>
+          <div>광고 클릭</div><b>${esc(String(ms ? ms.clicks : 0))}</b>
+          <div>CTR</div><b>${esc(ms ? `${(Number(ms.ctr || 0) * 100).toFixed(2)}%` : "0.00%")}</b>
+          <div>광고 매출</div><b>${esc(ms ? Number(ms.revenue_total || 0).toFixed(4) : "0.0000")}</b>
+          <div>eCPM</div><b>${esc(ms ? Number(ms.ecpm || 0).toFixed(3) : "0.000")}</b>
+          <div>활성 사용자</div><b>${esc(String(ms ? ms.active_users : 0))}</b>
+        </div>
+      </div>
       ${games.length ? games.map((g) => `
         <div class="detail" style="margin-bottom:8px;">
           <div class="kv">
@@ -532,11 +544,35 @@ function renderPortalTab(){
           <div class="hint">광고 슬롯: 좌측/우측 자리 예약됨 (현재 placeholder)</div>
           <div style="display:flex;gap:8px;margin-top:8px;">
             <a class="btn btn-primary" href="${esc(g.demo_url)}" target="_blank" rel="noopener">플레이</a>
+            <button class="btn js-ad-imp" data-id="${esc(g.project_id)}" data-slot="left">좌측 노출 +1</button>
+            <button class="btn js-ad-click" data-id="${esc(g.project_id)}" data-slot="right">우측 클릭 +1</button>
+            <button class="btn js-ad-rev" data-id="${esc(g.project_id)}" data-slot="right">매출 +0.02</button>
           </div>
         </div>
       `).join("") : `<div class="hint">아직 공개된 게임이 없습니다. 최종 승인 후 자동 등록됩니다.</div>`}
     </div>
   `;
+  for(const b of el.querySelectorAll('.js-ad-imp')){
+    b.onclick = async () => {
+      await emitPortalAdEvent(b.dataset.id, "impression", b.dataset.slot || "left", 0);
+      await fetchPortalCatalog();
+      await fetchMonetizationSummary();
+    };
+  }
+  for(const b of el.querySelectorAll('.js-ad-click')){
+    b.onclick = async () => {
+      await emitPortalAdEvent(b.dataset.id, "click", b.dataset.slot || "right", 0);
+      await fetchPortalCatalog();
+      await fetchMonetizationSummary();
+    };
+  }
+  for(const b of el.querySelectorAll('.js-ad-rev')){
+    b.onclick = async () => {
+      await emitPortalAdEvent(b.dataset.id, "revenue", b.dataset.slot || "right", 0.02);
+      await fetchPortalCatalog();
+      await fetchMonetizationSummary();
+    };
+  }
 }
 
 function renderMinutesTab(){
@@ -708,6 +744,29 @@ async function fetchPortalCatalog(){
   }catch(_){ }
 }
 
+async function fetchMonetizationSummary(projectId=""){
+  try{
+    const q = projectId ? `?since_minutes=1440&project_id=${encodeURIComponent(projectId)}` : "?since_minutes=1440";
+    const res = await fetch(`/api/monetization/summary${q}`);
+    const data = await res.json();
+    if(data && data.summary) state.monetization_summary = data.summary;
+    if(currentTab === "portal") renderPortalTab();
+  }catch(_){ }
+}
+
+async function emitPortalAdEvent(projectId, eventType, slot, value){
+  await fetch(`/api/portal/${projectId}/ad_event`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      event_type: String(eventType || "impression"),
+      slot: String(slot || "left"),
+      value: Number(value || 0),
+      user_id: "portal_sim",
+    }),
+  });
+}
+
 async function fetchProjectKpi(projectId){
   try{
     const res = await fetch(`/api/projects/${projectId}/kpi_summary?since_minutes=180`);
@@ -792,6 +851,7 @@ function setupUI(){
   await fetchCompletion();
   await fetchLearning();
   await fetchPortalCatalog();
+  await fetchMonetizationSummary();
   const p0 = [...(state.game_projects||[])].sort((a,b)=>String(b.id).localeCompare(String(a.id)))[0];
   if(p0 && p0.id) await fetchProjectKpi(p0.id);
   connectWS();
@@ -800,6 +860,7 @@ function setupUI(){
     fetchCompletion();
     fetchLearning();
     fetchPortalCatalog();
+    fetchMonetizationSummary();
     if(currentTab === "preview"){
       const p = [...(state.game_projects||[])].sort((a,b)=>String(b.id).localeCompare(String(a.id)))[0];
       if(p && p.id) fetchProjectKpi(p.id);

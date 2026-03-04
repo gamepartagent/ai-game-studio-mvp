@@ -76,6 +76,13 @@ class KPIEventCreate(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class PortalAdEventCreate(BaseModel):
+    event_type: str = Field(description="impression/click/revenue")
+    slot: str = Field(default="left", description="left/right/top/bottom")
+    value: float = 0.0
+    user_id: str = "anon"
+
+
 class ExperimentCreate(BaseModel):
     name: str
     hypothesis: str = ""
@@ -322,6 +329,57 @@ async def get_project_kpi_summary(
 @app.get("/api/portal/catalog")
 async def get_portal_catalog() -> Dict[str, Any]:
     return store.portal_catalog()
+
+
+@app.get("/api/monetization/summary")
+async def get_monetization_summary(
+    since_minutes: int = Query(default=1440, ge=1, le=10080),
+    project_id: str = Query(default=""),
+) -> Dict[str, Any]:
+    return {"summary": store.monetization_summary(since_minutes=since_minutes, project_id=project_id)}
+
+
+@app.post("/api/portal/{project_id}/ad_event")
+async def create_portal_ad_event(project_id: str, body: PortalAdEventCreate) -> Dict[str, Any]:
+    if project_id not in store.game_projects:
+        return {"error": f"project not found: {project_id}"}
+    gp = store.game_projects[project_id]
+    if gp.status != "Released" or not gp.release_id or gp.release_id not in store.releases:
+        return {"error": f"project {project_id} is not publicly released"}
+    rel = store.releases[gp.release_id]
+    if not rel.final_confirmed:
+        return {"error": f"project {project_id} is not final-confirmed"}
+
+    et_raw = str(body.event_type or "").strip().lower()
+    mapping = {
+        "impression": "ad.impression",
+        "click": "ad.click",
+        "revenue": "ad.revenue",
+    }
+    if et_raw not in mapping:
+        return {"error": "event_type must be impression/click/revenue"}
+    et = mapping[et_raw]
+    value = float(body.value or 0.0)
+    if et != "ad.revenue":
+        value = 0.0
+    elif value <= 0:
+        return {"error": "revenue event requires value > 0"}
+
+    slot = str(body.slot or "left").strip().lower()
+    user_id = str(body.user_id or "anon").strip() or "anon"
+    e = store.add_kpi_event(
+        event_type=et,
+        user_id=user_id,
+        value=value,
+        meta={"project_id": project_id, "slot": slot, "release_id": rel.id},
+        source="portal",
+    )
+    await manager.broadcast({"type": "event", "data": store.event_to_dict(store.events[0])})
+    await manager.broadcast({"type": "snapshot", "data": store.snapshot()})
+    return {
+        "kpi_event": store.kpi_event_to_dict(e),
+        "summary": store.monetization_summary(since_minutes=1440, project_id=project_id),
+    }
 
 
 @app.post("/api/kpi/events")
