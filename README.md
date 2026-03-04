@@ -179,3 +179,20 @@ Optional (if using LLM planner):
 - Free web services can sleep when idle.
 - On wake-up, first request can be slow.
 - Use a paid plan later for always-on runtime.
+
+### E) Post-deploy smoke check
+After Render deploy is finished, run:
+
+```bash
+python scripts/render_post_deploy_check.py https://YOUR-SERVICE.onrender.com
+```
+
+Expected:
+- `healthz`, `readyz` = OK
+- `/api/state` returns agents/tasks JSON
+- `/api/completion` and `/api/learning/status` return JSON
+
+If failed:
+- Check Render Logs for startup errors
+- Confirm service URL is correct (`https://...onrender.com`)
+- Re-deploy once after setting environment variables
