@@ -996,6 +996,7 @@ async def run_orchestrator(store: Store, emit: Callable[[Dict[str, Any]], Awaita
                     task_id = agent.current_task_id
                     if task_id and task_id in store.tasks:
                         task = store.tasks[task_id]
+                        skill_before = store.agent_skill_score_for_task(agent.id, task.type)
                         if task.type in ("DEV", "QA"):
                             executor_name = "dev_test_build"
                             executor_config: Dict[str, Any] = {}
@@ -1021,6 +1022,18 @@ async def run_orchestrator(store: Store, emit: Callable[[Dict[str, Any]], Awaita
                             await tools.execute(
                                 {"tool": "update_task", "args": {"task_id": task_id, "changes": {"status": "Done"}}}
                             )
+                        grown = store.improve_agent_skills(agent.id, task.type, delta=random.uniform(0.2, 0.7))
+                        if grown:
+                            skill_after = store.agent_skill_score_for_task(agent.id, task.type)
+                            store.add_event(
+                                type="agent.skill_improved",
+                                actor_id=agent.id,
+                                summary=f"{agent.name} skill improved on {task.type} ({skill_before:.1f}->{skill_after:.1f})",
+                                refs={"task_id": task_id},
+                                payload={"task_type": task.type, "updated_skills": grown},
+                                source="orchestrator",
+                            )
+                            await emit({"type": "event", "data": store.event_to_dict(store.events[0])})
                         if task.type == "MKT" and random.random() < 0.35:
                             await tools.execute(
                                 {

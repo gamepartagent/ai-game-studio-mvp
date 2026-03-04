@@ -17,6 +17,52 @@ class RoleProfile:
     can_execute_executors: Set[str]
 
 
+ROLE_BASE_SKILLS: Dict[str, Dict[str, float]] = {
+    "CEO": {
+        "planning": 89.0,
+        "risk_management": 91.0,
+        "release_judgment": 88.0,
+        "communication": 84.0,
+    },
+    "MKT": {
+        "game_design": 88.0,
+        "economy_balance": 82.0,
+        "ux_flow": 84.0,
+        "trend_research": 86.0,
+        "copywriting": 75.0,
+    },
+    "DEV": {
+        "client_gameplay": 80.0,
+        "backend_api": 78.0,
+        "build_tooling": 77.0,
+        "debugging": 82.0,
+        "performance": 76.0,
+        "test_automation": 74.0,
+    },
+    "QA": {
+        "test_design": 90.0,
+        "bug_repro": 88.0,
+        "release_gate": 86.0,
+        "regression": 89.0,
+    },
+    "OPS": {
+        "liveops": 85.0,
+        "community": 82.0,
+        "marketing_ops": 78.0,
+        "kpi_analysis": 79.0,
+        "release_ops": 81.0,
+    },
+}
+
+TASK_SKILL_FOCUS: Dict[str, List[str]] = {
+    "CEO": ["planning", "risk_management", "release_judgment"],
+    "MKT": ["game_design", "ux_flow", "trend_research", "copywriting"],
+    "DEV": ["client_gameplay", "backend_api", "build_tooling", "debugging", "performance"],
+    "QA": ["test_design", "bug_repro", "regression", "release_gate"],
+    "OPS": ["liveops", "community", "marketing_ops", "kpi_analysis", "release_ops"],
+}
+
+
 ROLE_PROFILES: Dict[str, RoleProfile] = {
     # A) CEO / Producer
     "CEO": RoleProfile(
@@ -102,33 +148,39 @@ AGENT_PROFILE_OVERRIDES: Dict[str, Dict[str, object]] = {
         "title": "Executive Producer / Studio Head",
         "level": "Executive",
         "department": "Product Leadership",
+        "skills": {"planning": 92.0, "risk_management": 93.0, "release_judgment": 90.0},
     },
     "mkt": {
         "title": "Lead Game Designer / Product Designer",
         "level": "Lead",
         "department": "Design",
+        "skills": {"game_design": 91.0, "trend_research": 89.0, "economy_balance": 84.0},
     },
     "dev_a": {
         "title": "Senior Client Engineer",
         "level": "Senior IC",
         "department": "Engineering(Client)",
         "can_execute_executors": {"dev_dryrun", "dev_test_build", "project_autoupgrade"},
+        "skills": {"client_gameplay": 90.0, "performance": 84.0, "backend_api": 66.0},
     },
     "dev_b": {
         "title": "Backend/Tools Engineer",
         "level": "Senior IC",
         "department": "Engineering(Backend/Tools)",
         "can_execute_executors": {"dev_dryrun", "dev_test_build", "dev_git_ops"},
+        "skills": {"backend_api": 89.0, "build_tooling": 90.0, "client_gameplay": 65.0},
     },
     "qa": {
         "title": "QA Lead / Release Manager",
         "level": "Lead",
         "department": "Quality",
+        "skills": {"test_design": 92.0, "bug_repro": 91.0, "release_gate": 89.0},
     },
     "ops": {
         "title": "Growth & LiveOps Manager",
         "level": "Manager",
         "department": "Growth/Operations",
+        "skills": {"liveops": 88.0, "community": 85.0, "kpi_analysis": 83.0},
     },
 }
 
@@ -151,3 +203,19 @@ def profile_for_agent(agent_id: str, role: str) -> RoleProfile:
         can_request_approval_kinds=set(base.can_request_approval_kinds),
         can_execute_executors=set(ov.get("can_execute_executors", base.can_execute_executors)),
     )
+
+
+def default_skills_for_agent(agent_id: str, role: str) -> Dict[str, float]:
+    base = dict(ROLE_BASE_SKILLS.get(role, ROLE_BASE_SKILLS["OPS"]))
+    ov = AGENT_PROFILE_OVERRIDES.get(agent_id, {})
+    custom = dict(ov.get("skills", {}) or {})
+    for key, value in custom.items():
+        try:
+            base[str(key)] = max(1.0, min(100.0, float(value)))
+        except Exception:
+            continue
+    return base
+
+
+def skill_focus_for_task(task_type: str) -> List[str]:
+    return list(TASK_SKILL_FOCUS.get(task_type, TASK_SKILL_FOCUS["OPS"]))

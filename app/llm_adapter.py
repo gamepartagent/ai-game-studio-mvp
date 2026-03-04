@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .action_schema import sanitize_actions
 from .role_policy import profile_for_agent
-from .store import Agent, Store
+from .store import Agent, Store, Task
 
 
 ROLE_TYPES = {
@@ -21,19 +21,13 @@ ROLE_TYPES = {
     "OPS": ["OPS"],
 }
 
-
 TASK_TEMPLATES = [
-    ("DEV", "P0", "전투 장면 크래시 수정(random null ref)", "로그 조사, 재현, 패치, 테스트 추가."),
-    ("DEV", "P1", "설정 메뉴 구현(오디오 슬라이더)", "UI 추가 및 설정 저장 처리."),
-    ("DEV", "P1", "로딩 시간 최적화(에셋 프리패치)", "프로파일링 후 콜드스타트 지연 감소."),
-    ("DEV", "P2", "UX 소규모 개선(버튼 피드백)", "햅틱/오디오/애니메이션 타이밍 조정."),
-    ("QA", "P1", "스모크 테스트 실행(신규 빌드)", "온보딩/코어루프/상점/종료-재실행 점검."),
-    ("QA", "P2", "리포트 버그 재현 절차 작성", "유저 리포트를 재현 가능한 절차로 정리."),
-    ("MKT", "P2", "프로모션 게시물 초안 작성", "짧은 훅 + 장점 + CTA 구성."),
-    ("MKT", "P2", "패치노트 요약 작성", "유저 대상 요약을 간결하게 작성."),
-    ("OPS", "P2", "일일 리포트: 진행/블로커", "이벤트와 현재 스프린트 상태 요약."),
-    ("OPS", "P2", "백로그 태그 정리", "업무 유형/우선순위 정규화 및 메모 보강."),
-    ("CEO", "P1", "스프린트 계획 및 릴리즈 준비 검토", "백로그/릴리즈 블로커 검토."),
+    ("DEV", "P0", "런타임 크래시 수정", "재현 경로를 찾고 원인 분석 후 패치합니다."),
+    ("DEV", "P1", "튜토리얼 UX 개선", "이탈이 많은 구간의 안내/피드백을 개선합니다."),
+    ("QA", "P1", "회귀 테스트 실행", "핵심 루프와 시작 흐름을 집중 검증합니다."),
+    ("MKT", "P2", "패치노트 초안 작성", "변경점과 유저 영향 중심으로 요약합니다."),
+    ("OPS", "P2", "라이브 운영 리포트", "어제 KPI/이슈/대응을 1장 요약으로 정리합니다."),
+    ("CEO", "P1", "스프린트 우선순위 재정렬", "P0/P1 항목과 릴리즈 리스크를 재점검합니다."),
 ]
 
 ALLOWED_TOOLS = [
@@ -44,6 +38,8 @@ ALLOWED_TOOLS = [
     "set_agent_state",
     "run_task_executor",
 ]
+
+PRIORITY_BONUS = {"P0": 12.0, "P1": 7.0, "P2": 2.0}
 
 
 @dataclass
@@ -64,6 +60,21 @@ def _work_status_for_role(role: str) -> str:
     if role == "MKT":
         return "Drafting"
     return "Working"
+
+
+def _estimate_work_seconds(skill_score: float, priority: str) -> float:
+    base = 13.0 - (skill_score / 22.0)  # high skill -> faster
+    if priority == "P0":
+        base += 1.2  # high pressure tasks take longer
+    jitter = random.uniform(-1.0, 1.4)
+    return max(3.5, min(18.0, base + jitter))
+
+
+def _task_fit_score(store: Store, agent: Agent, task: Task) -> float:
+    skill = store.agent_skill_score_for_task(agent.id, task.type)
+    bonus = PRIORITY_BONUS.get(task.priority, 0.0)
+    backlog = max(0.0, min(4.0, (random.random() - 0.5) * 2.0))
+    return skill + bonus + backlog
 
 
 class RulePlanner:
@@ -96,8 +107,12 @@ class RulePlanner:
                     )
             return PlanResult(actions=actions, source="rule")
 
-        task = todo[0]
+        ranked = sorted(todo, key=lambda t: _task_fit_score(store, agent, t), reverse=True)
+        task = ranked[0]
+        skill_score = store.agent_skill_score_for_task(agent.id, task.type)
         next_status = _work_status_for_role(agent.role)
+        work_remaining = _estimate_work_seconds(skill_score, task.priority)
+
         actions.append(
             {
                 "tool": "update_task",
@@ -111,8 +126,11 @@ class RulePlanner:
                     "agent_id": agent.id,
                     "status": next_status,
                     "current_task_id": task.id,
-                    "work_remaining": random.uniform(5.0, 14.0),
-                    "summary": f"{agent.name} started {next_status.lower()} on {task.id}",
+                    "work_remaining": work_remaining,
+                    "summary": (
+                        f"{agent.name} started {task.id} "
+                        f"(skill={skill_score:.1f}, est={work_remaining:.1f}s)"
+                    ),
                 },
             }
         )
@@ -148,9 +166,12 @@ class OpenAIPlanner:
 
     def _build_payload(self, store: Store, agent: Agent) -> Dict[str, Any]:
         allowed_types = ROLE_TYPES.get(agent.role, [])
-        todo = store.find_todo_tasks(allowed_types=allowed_types)[:5]
-        pending_approvals = [a for a in store.approvals.values() if a.status == "Pending"][:5]
+        todo = store.find_todo_tasks(allowed_types=allowed_types)[:8]
+        pending_approvals = [a for a in store.approvals.values() if a.status == "Pending"][:6]
         profile = profile_for_agent(agent.id, agent.role)
+        ranked = sorted(todo, key=lambda t: _task_fit_score(store, agent, t), reverse=True)
+        recommended_id = ranked[0].id if ranked else None
+
         system_prompt = (
             "You are an autonomous game studio agent. "
             "You must output JSON only with shape: "
@@ -162,7 +183,9 @@ class OpenAIPlanner:
             f"Can create task types={sorted(profile.can_create_task_types)}. "
             f"Can request approval kinds={sorted(profile.can_request_approval_kinds)}. "
             f"Can run executors={sorted(profile.can_execute_executors)}. "
+            "Prefer the task with highest skill fit and priority unless blocked."
         )
+
         user_prompt = {
             "agent": {"id": agent.id, "name": agent.name, "role": agent.role},
             "job_profile": {
@@ -171,9 +194,20 @@ class OpenAIPlanner:
                 "department": profile.department,
                 "responsibilities": profile.responsibilities,
             },
+            "capabilities": {
+                "skills": dict(agent.skills or {}),
+                "recommended_task_id": recommended_id,
+            },
             "control": {"auto_run": store.auto_run, "speed": store.speed},
             "todo_candidates": [
-                {"id": t.id, "title": t.title, "type": t.type, "priority": t.priority, "status": t.status}
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "type": t.type,
+                    "priority": t.priority,
+                    "status": t.status,
+                    "skill_fit": round(_task_fit_score(store, agent, t), 2),
+                }
                 for t in todo
             ],
             "pending_approvals": [

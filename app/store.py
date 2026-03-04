@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .artifact_repo import ArtifactRepo
 from .persistence import SnapshotSQLite
-from .role_policy import profile_for_agent
+from .role_policy import default_skills_for_agent, profile_for_agent, skill_focus_for_task
 
 KST = timezone(timedelta(hours=9))
 
@@ -208,6 +208,7 @@ class Agent:
     status: str = "Idle"
     current_task_id: Optional[str] = None
     work_remaining: float = 0.0  # seconds
+    skills: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -429,6 +430,7 @@ class Store:
                 title=profile.title,
                 level=profile.level,
                 department=profile.department,
+                skills=default_skills_for_agent(_id, role),
             )
 
         # initial tasks
@@ -544,6 +546,8 @@ class Store:
             raw["title"] = p.title
             raw["level"] = p.level
             raw["department"] = p.department
+            if not raw.get("skills"):
+                raw["skills"] = default_skills_for_agent(str(raw.get("id", "")), str(raw.get("role", "OPS")))
             a = Agent(**raw)
             self.agents[a.id] = a
 
@@ -3035,3 +3039,36 @@ ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+'
         pr_rank = {"P0": 0, "P1": 1, "P2": 2}
         tasks.sort(key=lambda t: (pr_rank.get(t.priority, 9), t.created_at))
         return tasks
+
+    def agent_skill_score_for_task(self, agent_id: str, task_type: str) -> float:
+        agent = self.agents.get(agent_id)
+        if not agent:
+            return 50.0
+        focus = skill_focus_for_task(task_type)
+        if not focus:
+            return 50.0
+        scores: List[float] = []
+        for key in focus:
+            try:
+                scores.append(float((agent.skills or {}).get(key, 50.0)))
+            except Exception:
+                scores.append(50.0)
+        if not scores:
+            return 50.0
+        return max(1.0, min(100.0, sum(scores) / len(scores)))
+
+    def improve_agent_skills(self, agent_id: str, task_type: str, delta: float = 0.4) -> Dict[str, float]:
+        agent = self.agents.get(agent_id)
+        if not agent:
+            return {}
+        if not agent.skills:
+            agent.skills = default_skills_for_agent(agent.id, agent.role)
+        updated: Dict[str, float] = {}
+        for key in skill_focus_for_task(task_type):
+            cur = float(agent.skills.get(key, 50.0))
+            nxt = max(1.0, min(100.0, cur + delta))
+            agent.skills[key] = round(nxt, 2)
+            updated[key] = agent.skills[key]
+        if updated:
+            self.persist()
+        return updated

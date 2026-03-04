@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .risk_policy import RiskPolicy
-from .role_policy import ROLE_PROFILES, profile_for_agent
+from .role_policy import ROLE_BASE_SKILLS, ROLE_PROFILES, profile_for_agent
 from .store import Store
 from .orchestrator import run_orchestrator
 from .meeting_bot import run_meeting_bot
@@ -209,6 +209,7 @@ async def get_org_roles() -> Dict[str, Any]:
                 "can_request_approval_kinds": sorted(list(p.can_request_approval_kinds)),
                 "can_execute_executors": sorted(list(p.can_execute_executors)),
                 "responsibilities": list(p.responsibilities),
+                "skills": dict(a.skills or {}),
             }
         )
     return {
@@ -222,6 +223,7 @@ async def get_org_roles() -> Dict[str, Any]:
                 "can_create_task_types": sorted(list(rp.can_create_task_types)),
                 "can_request_approval_kinds": sorted(list(rp.can_request_approval_kinds)),
                 "can_execute_executors": sorted(list(rp.can_execute_executors)),
+                "default_skills": dict(ROLE_BASE_SKILLS.get(role, {})),
             }
             for role, rp in ROLE_PROFILES.items()
         },
