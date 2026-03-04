@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ai-game-studio-mvp
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: STUDIO_DB_PATH
+        value: data/studio.db
+      - key: ARTIFACT_ROOT_DIR
+        value: data/artifacts
+      - key: GATE_CREATE_ARTIFACT
+        value: "1"
+      - key: GATE_RELEASE_REQUEST
+        value: "1"
+      - key: ACTION_GATE_TTL_SECONDS
+        value: "900"

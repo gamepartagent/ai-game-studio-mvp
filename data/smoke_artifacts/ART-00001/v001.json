@@ -1,0 +1,25 @@
+{
+  "artifact_id": "ART-00001",
+  "title": "Dry-run output for TASK-0006",
+  "task_id": "TASK-0006",
+  "created_by": "ops",
+  "version": 1,
+  "content": {
+    "task": {
+      "id": "TASK-0006",
+      "title": "Smoke task",
+      "description": "verify create_task",
+      "type": "DEV",
+      "priority": "P2",
+      "status": "Todo",
+      "assignee_id": null,
+      "created_at": "2026-03-03T01:34:27+09:00",
+      "updated_at": "2026-03-03T01:34:27+09:00",
+      "checklist": [],
+      "comments": []
+    },
+    "executor": "dev_dryrun",
+    "note": "Placeholder output. Replace with real build/test executor."
+  },
+  "created_at": "2026-03-03T01:34:27+09:00"
+}

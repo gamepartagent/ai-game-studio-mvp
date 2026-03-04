@@ -1,0 +1,17 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+data/*.db
+data/*.db-journal
+data/artifacts
+static/generated
+uvicorn_*.log
+.git
+.gitignore

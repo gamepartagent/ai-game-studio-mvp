@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+data/*.db
+data/*.db-journal
+data/artifacts/
+
+static/generated/
+
+uvicorn_*.log
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

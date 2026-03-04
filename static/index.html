@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Game Studio - 운영 대시보드</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">AI</div>
+      <div>
+        <div class="title">AI Game Studio</div>
+        <div class="subtitle">운영 대시보드 MVP</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="btnAutoplay" class="btn">자동 실행: ON</button>
+      <button id="btnNewTask" class="btn btn-primary">+ 새 업무</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel panel-left">
+      <div class="panel-title">
+        <h2>업무</h2>
+        <div class="pill" id="taskCount">0</div>
+      </div>
+      <div class="kanban">
+        <div class="col">
+          <div class="col-title">할 일</div>
+          <div class="col-body" id="colTodo"></div>
+        </div>
+        <div class="col">
+          <div class="col-title">진행중</div>
+          <div class="col-body" id="colDoing"></div>
+        </div>
+        <div class="col">
+          <div class="col-title">완료</div>
+          <div class="col-body" id="colDone"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-center">
+      <div class="panel-title">
+        <h2>오피스 맵</h2>
+        <div class="pill" id="agentCount">0</div>
+      </div>
+      <div class="office" id="office"></div>
+      <div class="meeting-room" id="meetingRoom"></div>
+    </section>
+
+    <section class="panel panel-right">
+      <div class="tabs">
+        <button class="tab active" data-tab="details">상세</button>
+        <button class="tab" data-tab="preview">미리보기</button>
+        <button class="tab" data-tab="agents">에이전트</button>
+        <button class="tab" data-tab="approvals">승인</button>
+        <button class="tab" data-tab="kpi">KPI</button>
+        <button class="tab" data-tab="releases">릴리즈</button>
+        <button class="tab" data-tab="projects">프로젝트</button>
+        <button class="tab" data-tab="final_approval">최종 승인</button>
+        <button class="tab" data-tab="minutes">회의록</button>
+        <button class="tab" data-tab="about">소개</button>
+      </div>
+      <div class="tabpanel" id="tab-details"></div>
+      <div class="tabpanel hidden" id="tab-preview"></div>
+      <div class="tabpanel hidden" id="tab-agents"></div>
+      <div class="tabpanel hidden" id="tab-approvals"></div>
+      <div class="tabpanel hidden" id="tab-kpi"></div>
+      <div class="tabpanel hidden" id="tab-releases"></div>
+      <div class="tabpanel hidden" id="tab-projects"></div>
+      <div class="tabpanel hidden" id="tab-final_approval"></div>
+      <div class="tabpanel hidden" id="tab-minutes"></div>
+      <div class="tabpanel hidden" id="tab-about">
+        <div class="about">
+          <h3>현재 화면 안내</h3>
+          <p>에이전트 회사의 업무 진행, 회의, 릴리즈 상태를 실시간으로 확인할 수 있습니다.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="panel panel-bottom">
+    <div class="panel-title">
+      <h2>활동 피드</h2>
+      <div class="hint">WebSocket 실시간 반영</div>
+    </div>
+    <div class="feed" id="feed"></div>
+  </footer>
+
+  <div class="modal hidden" id="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title">업무 생성</div>
+        <button class="btn" id="btnCloseModal">닫기</button>
+      </div>
+      <div class="modal-body">
+        <label>제목</label>
+        <input id="newTitle" placeholder="예: 튜토리얼 UX 개선" />
+        <label>설명</label>
+        <textarea id="newDesc" rows="3" placeholder="무엇을 해야 하는지 입력"></textarea>
+        <div class="row">
+          <div class="rowcol">
+            <label>유형</label>
+            <select id="newType">
+              <option value="DEV">DEV</option>
+              <option value="QA">QA</option>
+              <option value="MKT">MKT</option>
+              <option value="OPS">OPS</option>
+              <option value="CEO">CEO</option>
+            </select>
+          </div>
+          <div class="rowcol">
+            <label>우선순위</label>
+            <select id="newPri">
+              <option value="P0">P0</option>
+              <option value="P1">P1</option>
+              <option value="P2" selected>P2</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-end">
+          <button class="btn btn-primary" id="btnCreate">생성</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
