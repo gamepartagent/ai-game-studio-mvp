@@ -81,6 +81,10 @@ class ToolExecutor:
         self.emit = emit
         self.risk_policy = RiskPolicy.from_env()
         self.action_gate_ttl_seconds = int(os.getenv("ACTION_GATE_TTL_SECONDS", "900"))
+        self.project_cycle_mod = max(1, int(os.getenv("STUDIO_PROJECT_CYCLE_MOD", "2")))
+        self.project_target_builds = max(4, int(os.getenv("STUDIO_PROJECT_TARGET_BUILDS", "8")))
+        self.project_upgrade_chance = max(0.05, min(1.0, float(os.getenv("STUDIO_PROJECT_UPGRADE_CHANCE", "0.78"))))
+        self.release_upgrade_chance = max(0.05, min(1.0, float(os.getenv("STUDIO_RELEASE_UPGRADE_CHANCE", "0.55"))))
         self.executors = TaskExecutorRegistry()
         self._meeting_tick = 0
         self._experiment_tick = 0
@@ -801,6 +805,24 @@ class ToolExecutor:
 
         released.sort(key=lambda g: g.updated_at, reverse=True)
         for gp in released[:3]:
+            if gp.task_ids and random.random() < self.release_upgrade_chance:
+                dev_tasks = [
+                    tid for tid in gp.task_ids
+                    if tid in self.store.tasks and self.store.tasks[tid].type == "DEV"
+                ]
+                if dev_tasks:
+                    await self.execute(
+                        {
+                            "tool": "run_task_executor",
+                            "args": {
+                                "task_id": dev_tasks[0],
+                                "executor": "project_autoupgrade",
+                                "actor_id": random.choice(["dev_a", "dev_b"]),
+                                "config": {"project_id": gp.id},
+                            },
+                        }
+                    )
+                    await self._emit_latest_event()
             kpi_gate = self.store.release_kpi_gate(since_minutes=180, project_id=gp.id)
             tag = f"[{gp.id}]"
             open_tasks = [
@@ -950,7 +972,7 @@ class ToolExecutor:
 
     async def auto_drive_game_factory(self) -> None:
         self._project_tick += 1
-        if self._project_tick % 4 != 0:
+        if self._project_tick % self.project_cycle_mod != 0:
             return
 
         # 1) Ensure at least one ideation meeting exists for trend discussion.
@@ -990,9 +1012,9 @@ class ToolExecutor:
                 if not gp.demo_url:
                     self.store.generate_project_demo(gp.id, actor_id="dev_a")
                     await self._emit_latest_event()
-                target_builds = 4
+                target_builds = self.project_target_builds
                 # Agent-driven upgrade executor: developers improve game quality through structured passes.
-                if gp.task_ids and (gp.demo_build_count < target_builds or random.random() < 0.28):
+                if gp.task_ids and (gp.demo_build_count < target_builds or random.random() < self.project_upgrade_chance):
                     dev_tasks = [
                         tid for tid in gp.task_ids
                         if tid in self.store.tasks and self.store.tasks[tid].type == "DEV"
@@ -1010,6 +1032,38 @@ class ToolExecutor:
                                 }
                             )
                         await self._emit_latest_event()
+                        if random.random() < 0.85:
+                            await self.execute(
+                                {
+                                    "tool": "run_task_executor",
+                                    "args": {
+                                        "task_id": dev_tasks[0],
+                                        "executor": "dev_test_build",
+                                        "actor_id": random.choice(["dev_a", "dev_b"]),
+                                        "config": {
+                                            "commands": [os.getenv("STUDIO_BUILD_CMD", "python -m compileall -q app")],
+                                            "timeout_sec": 240,
+                                        },
+                                    },
+                                }
+                            )
+                            await self._emit_latest_event()
+                        if random.random() < 0.75:
+                            await self.execute(
+                                {
+                                    "tool": "run_task_executor",
+                                    "args": {
+                                        "task_id": dev_tasks[0],
+                                        "executor": "dev_git_ops",
+                                        "actor_id": random.choice(["dev_a", "dev_b"]),
+                                        "config": {
+                                            "operation": random.choice(["status", "diff"]),
+                                            "timeout_sec": 120,
+                                        },
+                                    },
+                                }
+                            )
+                            await self._emit_latest_event()
                 done = [tid for tid in gp.task_ids if tid in self.store.tasks and self.store.tasks[tid].status == "Done"]
                 dev_done = [
                     tid for tid in gp.task_ids
@@ -1061,7 +1115,7 @@ class ToolExecutor:
                 # only request release after a minimum quality pass
                 quality = self.store.evaluate_project_quality(gp.id)
                 if (
-                    (gp.demo_build_count >= target_builds or (gp.demo_build_count >= 4 and quality >= 84.0))
+                    (gp.demo_build_count >= target_builds or (gp.demo_build_count >= 5 and quality >= 84.0))
                     and len(done) >= max(2, len(gp.task_ids) - 1)
                     and quality >= 72.0
                 ):
