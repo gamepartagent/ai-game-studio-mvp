@@ -3029,18 +3029,28 @@ let score=0,t={duration},running=true,combo=0,bestCombo=0,mult=1.0,stage=1;
 let headshots=0,bodyshots=0,legshots=0,misses=0,lastShot='READY';
 let bots=[];let bursts=[];
 function rr(min,max){{return min+Math.random()*(max-min);}}
-function mkBot(boost=1){{const s=0.86+Math.random()*0.48;const h=72*s;const w=30*s;const headR=11*s;const sp=(0.9+0.25*{tier})*boost;return{{x:rr(70,cvs.width-70),y:rr(112,cvs.height-72),vx:rr(-sp,sp),vy:rr(-sp,sp),w,h,headR,ttl:420+Math.floor(Math.random()*220)}};}}
+function mkBot(boost=1){{const s=0.86+Math.random()*0.48;const h=76*s;const w=32*s;const headR=11*s;const sp=(0.9+0.25*{tier})*boost;return{{x:rr(70,cvs.width-70),y:rr(112,cvs.height-72),vx:rr(-sp,sp),vy:rr(-sp,sp),w,h,headR,ttl:420+Math.floor(Math.random()*220),phase:Math.random()*6.28,armor:1+Math.floor(Math.random()*2)}};}}
 function spawnBots(){{bots=[mkBot(1)];if(allowDual)bots.push(mkBot(1.1));}}
 function burst(x,y,col){{bursts.push({{x,y,life:26,col}});}}
 function updateBursts(){{for(const b of bursts)b.life--;bursts=bursts.filter(b=>b.life>0);}}
 function botZones(b){{const head={{x:b.x,y:b.y-b.h*0.58,r:b.headR}};const body={{x:b.x,y:b.y-b.h*0.15,w:b.w,h:b.h*0.46}};const leg={{x:b.x,y:b.y+b.h*0.28,w:b.w*0.9,h:b.h*0.34}};return{{head,body,leg}};}}
 function ptRect(x,y,r){{return x>=r.x-r.w/2&&x<=r.x+r.w/2&&y>=r.y-r.h/2&&y<=r.y+r.h/2;}}
 function hitZone(x,y,b){{const z=botZones(b);if(Math.hypot(x-z.head.x,y-z.head.y)<=z.head.r)return'head';if(ptRect(x,y,z.body))return'body';if(ptRect(x,y,z.leg))return'leg';return'';}}
-function drawBot(b){{const z=botZones(b);ctx.fillStyle='rgba(90,120,168,0.16)';ctx.fillRect(b.x-30,b.y-b.h*0.92,60,b.h*1.08);
-ctx.beginPath();ctx.arc(z.head.x,z.head.y,z.head.r,0,Math.PI*2);ctx.fillStyle='#ffbd8f';ctx.fill();
-ctx.fillStyle='#6eb8ff';ctx.fillRect(z.body.x-z.body.w/2,z.body.y-z.body.h/2,z.body.w,z.body.h);
-ctx.fillStyle='#8dd6a4';ctx.fillRect(z.leg.x-z.leg.w/2,z.leg.y-z.leg.h/2,z.leg.w,z.leg.h);
-ctx.strokeStyle='rgba(255,255,255,0.28)';ctx.strokeRect(z.body.x-z.body.w/2,z.body.y-z.body.h/2,z.body.w,z.body.h);}}
+function drawBot(b){{const z=botZones(b);const bob=Math.sin(b.phase)*2.4;const bodyY=z.body.y+bob;const legY=z.leg.y+bob;const headY=z.head.y+bob;
+ctx.fillStyle='rgba(10,18,38,0.45)';ctx.beginPath();ctx.ellipse(b.x,legY+z.leg.h*0.7,b.w*0.68,6,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='rgba(90,120,168,0.14)';ctx.fillRect(b.x-34,headY-b.h*0.36,68,b.h*0.98);
+const g=ctx.createLinearGradient(0,bodyY-z.body.h/2,0,bodyY+z.body.h/2);g.addColorStop(0,'#7ed0ff');g.addColorStop(1,'#4e8dd4');
+ctx.fillStyle=g;ctx.fillRect(z.body.x-z.body.w/2,bodyY-z.body.h/2,z.body.w,z.body.h);
+ctx.fillStyle='rgba(255,255,255,0.24)';ctx.fillRect(z.body.x-z.body.w*0.35,bodyY-z.body.h*0.34,z.body.w*0.7,z.body.h*0.12);
+ctx.fillStyle='#9be4bd';ctx.fillRect(z.leg.x-z.leg.w/2,legY-z.leg.h/2,z.leg.w,z.leg.h);
+ctx.fillStyle='#79b3de';ctx.fillRect(z.body.x-z.body.w*0.78,bodyY-z.body.h*0.3,z.body.w*0.22,z.body.h*0.5);
+ctx.fillRect(z.body.x+z.body.w*0.56,bodyY-z.body.h*0.3,z.body.w*0.22,z.body.h*0.5);
+ctx.beginPath();ctx.arc(z.head.x,headY,z.head.r,0,Math.PI*2);ctx.fillStyle='#ffd3ad';ctx.fill();
+ctx.beginPath();ctx.arc(z.head.x,headY,z.head.r*0.82,Math.PI,Math.PI*2);ctx.strokeStyle='rgba(100,200,255,0.85)';ctx.lineWidth=2;ctx.stroke();
+ctx.fillStyle='#1f3555';ctx.fillRect(z.head.x-z.head.r*0.45,headY-z.head.r*0.1,z.head.r*0.9,3);
+ctx.fillStyle='rgba(255,255,255,0.24)';ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1;ctx.strokeRect(z.body.x-z.body.w/2,bodyY-z.body.h/2,z.body.w,z.body.h);
+if(b.armor>1){{ctx.fillStyle='rgba(255,196,104,0.75)';ctx.fillRect(z.body.x-z.body.w*0.14,bodyY-z.body.h*0.08,z.body.w*0.28,4);}}
+}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#16223f');g.addColorStop(1,'#0f172b');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
 for(let i=0;i<18;i++){{const y=(i*28+(Date.now()*0.03)%28)%cvs.height;ctx.fillStyle='rgba(120,170,255,0.08)';ctx.fillRect(0,y,cvs.width,1);}}
 for(const b of bots)drawBot(b);for(const b of bursts){{ctx.beginPath();ctx.arc(b.x,b.y,34-b.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{b.life/28}})`;ctx.stroke();}}
@@ -3058,7 +3068,7 @@ combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.5,1+combo*0.07);scor
 scoreEl.textContent=String(score);}});
 spawnBots();loop();
 const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));stage=Math.min(4,1+Math.floor(({duration}-t)/Math.max(1,{duration}/4)));
-for(let i=0;i<bots.length;i++){{const b=bots[i];b.x+=b.vx;b.y+=b.vy;if(b.x<45||b.x>cvs.width-45)b.vx*=-1;if(b.y<84||b.y>cvs.height-62)b.vy*=-1;b.ttl--;if(b.ttl<=0)bots[i]=mkBot(1+stage*0.08);}}
+for(let i=0;i<bots.length;i++){{const b=bots[i];b.x+=b.vx;b.y+=b.vy;b.phase+=0.13;if(b.x<45||b.x>cvs.width-45)b.vx*=-1;if(b.y<84||b.y>cvs.height-62)b.vy*=-1;b.ttl--;if(b.ttl<=0)bots[i]=mkBot(1+stage*0.08);}}
 if(combo>0&&Math.random()<0.12)combo--;mult=Math.max(1,1+combo*0.06);
 E.hud.set({{wave:stage,hp:Math.max(0,6-Math.min(5,misses)),combo:combo,note:lastShot}});
 if(t<=0){{running=false;clearInterval(timer);
