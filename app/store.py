@@ -2968,55 +2968,49 @@ ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' 
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
 const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}},drawOverlay(){{}}}};
-const A=window.__studioAssets||{{draw:(_c,_k,_x,_y,_w,_h,f)=>{{if(f)f();}}}};
-const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
-const metaKey='studio_meta_dodge_v2';
-const meta=(()=>{{try{{return JSON.parse(localStorage.getItem(metaKey)||'{{}}')}}catch(_e){{return {{}};}}}})();
+const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}},updateSocialHint:()=>{{}}}};
 const mission=M.getMission('dodge');M.writeMissionHint('dodge');
-const metaLvl=Math.max(0,Number(meta.level||0));const bonusShield=Math.min(180,metaLvl*12);
-let running=true,t={duration},score=0,tick=0,wave=1,lastHit=0,stage=1;
-const p={{x:410,y:220,vx:0,vy:0,r:14,hp:4,shield:bonusShield,dashCd:0}};
-let balls=[],pickups=[],rings=[];let slowmo=0;const keys={{}};let boss=null;let nearStreak=0;
-function spawnBall(mult=1){{const spd=2.1+Math.random()*({2+difficulty})+wave*0.15*mult;
-if('{variant}'==='spiral_wave'&&Math.random()<0.74){{const a=tick*0.18+Math.random()*1.2;balls.push({{x:410+Math.cos(a)*390,y:220+Math.sin(a)*215,r:8+Math.random()*12,vx:-Math.cos(a)*(1.2+Math.random()*2.2),vy:-Math.sin(a)*(1.0+Math.random()*2.0),kind:'spiral'}});return;}}
-const edge=Math.floor(Math.random()*4);let x=0,y=0;if(edge===0){{x=Math.random()*cvs.width;y=-20;}}if(edge===1){{x=cvs.width+20;y=Math.random()*cvs.height;}}if(edge===2){{x=Math.random()*cvs.width;y=cvs.height+20;}}if(edge===3){{x=-20;y=Math.random()*cvs.height;}}
-const homing=Math.random()<0.3;const dx=p.x-x,dy=p.y-y,d=Math.max(1,Math.hypot(dx,dy));balls.push({{x,y,r:8+Math.random()*13,vx:(dx/d)*spd*(homing?0.6:1),vy:(dy/d)*spd*(homing?0.6:1),kind:homing?'homing':'normal'}});}}
-function spawnPickup(){{const kind=Math.random()<0.52?'shield':'slow';pickups.push({{x:40+Math.random()*(cvs.width-80),y:40+Math.random()*(cvs.height-80),r:11,kind,ttl:430}});}}
-function ensureBoss(elapsed){{if(elapsed<{duration}*0.62||boss)return;boss={{x:410,y:56,r:34,hp:8+Math.floor({difficulty}/2),tick:0}};}}
+let running=true,t={duration},score=0,tick=0,wave=1;
+let target={{x:cvs.width*0.5,y:cvs.height*0.55}};
+let head={{x:target.x,y:target.y,r:12}};let tail=[];let tailTarget=14;
+let balls=[],bursts=[];let near=0;
+function rr(min,max){{return min+Math.random()*(max-min);}}
+function spawnBall(){{const edge=Math.floor(Math.random()*4);let x=0,y=0;if(edge===0){{x=rr(0,cvs.width);y=-16;}}if(edge===1){{x=cvs.width+16;y=rr(0,cvs.height);}}if(edge===2){{x=rr(0,cvs.width);y=cvs.height+16;}}if(edge===3){{x=-16;y=rr(0,cvs.height);}}
+const speed=1.2+Math.random()*(1.2+{difficulty}*0.35)+tick*0.0018;const dx=head.x-x,dy=head.y-y,d=Math.max(1,Math.hypot(dx,dy));balls.push({{x,y,r:7+Math.random()*7,vx:(dx/d)*speed,vy:(dy/d)*speed}});}}
+function burst(x,y,col){{bursts.push({{x,y,life:24,col}});}}
 function drawBg(){{const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#101a31');g.addColorStop(1,'#0a1226');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
-for(let i=0;i<22;i++){{const y=(i*27+(tick*0.38)%27)%cvs.height;ctx.fillStyle='rgba(96,132,190,0.12)';ctx.fillRect(0,y,cvs.width,1);}}
-for(const r of rings){{ctx.beginPath();ctx.arc(r.x,r.y,r.radius,0,Math.PI*2);ctx.strokeStyle='rgba(122,240,255,'+(r.life/40)+')';ctx.lineWidth=2;ctx.stroke();r.radius+=1.7;r.life-=1;}}rings=rings.filter(r=>r.life>0);}}
-function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawBg();for(const b of balls){{A.draw(ctx,'enemy',b.x-b.r,b.y-b.r,b.r*2,b.r*2,()=>{{ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle=b.kind==='homing'?'#ff5f7a':'#ff8b8b';ctx.fill();}});}}
-for(const it of pickups){{A.draw(ctx,'orb',it.x-it.r,it.y-it.r,it.r*2,it.r*2,()=>{{ctx.beginPath();ctx.arc(it.x,it.y,it.r,0,Math.PI*2);ctx.fillStyle=it.kind==='shield'?'#6bc3ff':'#ffe07f';ctx.fill();}});}}
-if(boss){{A.draw(ctx,'boss',boss.x-boss.r,boss.y-boss.r,boss.r*2,boss.r*2,()=>{{ctx.beginPath();ctx.arc(boss.x,boss.y,boss.r,0,Math.PI*2);ctx.fillStyle='#ff4d7b';ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(boss.x-10,boss.y-4,6,6);ctx.fillRect(boss.x+4,boss.y-4,6,6);}});
-ctx.fillStyle='rgba(8,14,26,0.54)';ctx.fillRect(590,16,210,12);ctx.fillStyle='#ff7f9f';ctx.fillRect(590,16,210*Math.max(0,boss.hp)/(8+Math.floor({difficulty}/2)),12);ctx.strokeStyle='rgba(255,180,200,0.8)';ctx.strokeRect(590,16,210,12);}}
-A.draw(ctx,'player',p.x-p.r,p.y-p.r,p.r*2,p.r*2,()=>{{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=p.shield>0?'#8fe7ff':'#75d0a2';ctx.fill();}});if(p.shield>0){{ctx.beginPath();ctx.arc(p.x,p.y,p.r+7,0,Math.PI*2);ctx.strokeStyle='rgba(120,220,255,0.75)';ctx.lineWidth=2;ctx.stroke();}}
-E.drawOverlay(ctx,cvs.width,cvs.height);}}
-window.addEventListener('keydown',e=>{{keys[e.key]=true;if((e.key==='Shift'||e.key==='ShiftLeft')&&p.dashCd<=0){{const dx=(keys['ArrowRight']?1:0)-(keys['ArrowLeft']?1:0);const dy=(keys['ArrowDown']?1:0)-(keys['ArrowUp']?1:0);p.x+=dx*84;p.y+=dy*84;p.dashCd=84;E.audio.success();rings.push({{x:p.x,y:p.y,radius:8,life:30}});}}}});
-window.addEventListener('keyup',e=>{{keys[e.key]=false;}});
-cvs.addEventListener('mousemove',e=>{{const r=cvs.getBoundingClientRect();p.x=(e.clientX-r.left)*(cvs.width/r.width);p.y=(e.clientY-r.top)*(cvs.height/r.height);}});
-function step(){{if(!running)return;tick++;const elapsed={duration}-t;stage=Math.min(3,1+Math.floor(elapsed/Math.max(1,{duration}/3)));if(tick%240===0)wave++;const mv=4.5;
-p.vx=((keys['ArrowRight']?1:0)-(keys['ArrowLeft']?1:0))*mv;p.vy=((keys['ArrowDown']?1:0)-(keys['ArrowUp']?1:0))*mv;p.x=Math.max(p.r,Math.min(cvs.width-p.r,p.x+p.vx));p.y=Math.max(p.r,Math.min(cvs.height-p.r,p.y+p.vy));if(p.dashCd>0)p.dashCd--;
-if(Math.random()<(0.025+stage*0.01)*{difficulty})spawnBall(1+stage*0.2);if(Math.random()<0.0038&&pickups.length<2)spawnPickup();ensureBoss(elapsed);
-const slowFactor=slowmo>0?0.45:1.0;if(slowmo>0)slowmo--;
-for(const b of balls){{if(b.kind==='homing'){{const dx=p.x-b.x,dy=p.y-b.y,d=Math.max(1,Math.hypot(dx,dy));b.vx+=(dx/d)*0.047;b.vy+=(dy/d)*0.047;}}b.x+=(b.vx||0)*slowFactor;b.y+=(b.vy||0)*slowFactor;}}
-balls=balls.filter(b=>b.y<cvs.height+40&&b.x>-50&&b.x<cvs.width+50);
-if(boss){{boss.tick++;boss.x=410+Math.sin(boss.tick*0.03)*220;if(boss.tick%18===0)balls.push({{x:boss.x,y:boss.y+8,r:9,vx:Math.sin(boss.tick*0.1)*1.8,vy:2.9+stage*0.5,kind:'boss'}});}}
-for(let i=pickups.length-1;i>=0;i--){{const it=pickups[i];it.ttl--;if(it.ttl<=0){{pickups.splice(i,1);continue;}}
-if(Math.hypot(p.x-it.x,p.y-it.y)<p.r+it.r){{if(it.kind==='shield')p.shield=Math.max(p.shield,240+bonusShield);if(it.kind==='slow')slowmo=190;pickups.splice(i,1);score+=16;E.audio.success();E.vfx.burst(p.x,p.y,'#7af0ff',1.3);}}}}
-for(const b of balls){{const dist=Math.hypot(p.x-b.x,p.y-b.y);if(dist<b.r+p.r){{if(p.shield>0){{p.shield=Math.max(0,p.shield-120);score+=5;E.audio.hit();E.vfx.burst(p.x,p.y,'#8fe7ff',1.0);}}
-else if(tick-lastHit>24){{p.hp--;lastHit=tick;score=Math.max(0,score-18);E.audio.alert();rings.push({{x:p.x,y:p.y,radius:6,life:34}});}}}} else if(dist<b.r+p.r+16){{score+=1;}}}}
-for(const b of balls){{const d2=Math.hypot(p.x-b.x,p.y-b.y);if(d2>=b.r+p.r+2&&d2<b.r+p.r+20){{nearStreak=Math.min(30,nearStreak+0.5);score+=Math.floor(nearStreak/8);}}}}nearStreak=Math.max(0,nearStreak-0.05);
-if(boss&&p.dashCd>0&&Math.hypot(p.x-boss.x,p.y-boss.y)<p.r+boss.r+10){{boss.hp--;score+=30;E.audio.success();E.vfx.burst(boss.x,boss.y,'#ff7f9f',1.6);p.dashCd=0;if(boss.hp<=0){{score+=190;boss=null;for(let n=0;n<6;n++)E.vfx.burst(410+Math.random()*120-60,110+Math.random()*80,'#ffd56c',1.9);}}}}
-if(p.shield>0)p.shield--;if(p.hp<=0)running=false;if(running)score+=1+Math.floor(wave*0.25)+stage;scoreEl.textContent=String(score);
-const mNow=(mission.kind==='wave'?wave:(mission.kind==='stage'?stage:score));
-E.hud.set({{wave:wave,hp:p.hp,combo:Math.max(0,Math.floor(score/45))+Math.floor(nearStreak/4),note:boss?('BOSS HP '+boss.hp):(`미션 ${{mNow}}/${{mission.target}}`)}});draw();requestAnimationFrame(step);}}
+for(let i=0;i<24;i++){{const y=(i*25+(tick*0.55)%25)%cvs.height;ctx.fillStyle='rgba(96,132,190,0.11)';ctx.fillRect(0,y,cvs.width,1);}}}}
+function drawWorm(){{for(let i=tail.length-1;i>=0;i--){{const p=tail[i];const a=i/Math.max(1,tail.length);ctx.beginPath();ctx.arc(p.x,p.y,Math.max(4,10*(1-a*0.85)),0,Math.PI*2);ctx.fillStyle=`rgba(117,208,162,${{0.18+0.62*(1-a)}})`;ctx.fill();}}
+ctx.beginPath();ctx.arc(head.x,head.y,12,0,Math.PI*2);ctx.fillStyle='#75d0a2';ctx.fill();ctx.fillStyle='#0f2530';ctx.fillRect(head.x-4,head.y-2,2,2);ctx.fillRect(head.x+2,head.y-2,2,2);}}
+function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawBg();for(const b of balls){{ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle='#ff8b8b';ctx.fill();}}
+drawWorm();for(const p of bursts){{ctx.beginPath();ctx.arc(p.x,p.y,28-p.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{p.life/24}})`;ctx.stroke();}}
+ctx.fillStyle='#dbe8ff';ctx.font='14px Segoe UI';ctx.fillText('꼬리 길이 '+tail.length+' / '+tailTarget,14,24);ctx.fillText('웨이브 '+wave+' | 근접회피 '+Math.floor(near),14,44);}}
+cvs.addEventListener('mousemove',e=>{{const r=cvs.getBoundingClientRect();target.x=(e.clientX-r.left)*(cvs.width/r.width);target.y=(e.clientY-r.top)*(cvs.height/r.height);}});
+function step(){{if(!running)return;tick++;if(tick%160===0)wave++;
+head.x+=(target.x-head.x)*0.22;head.y+=(target.y-head.y)*0.22;tail.unshift({{x:head.x,y:head.y}});while(tail.length>tailTarget)tail.pop();
+if(tick%Math.max(8,18-wave*2)===0)spawnBall();
+for(const b of balls){{const scale=1+tick*0.00014;b.x+=b.vx*scale;b.y+=b.vy*scale;}}
+balls=balls.filter(b=>b.x>-60&&b.x<cvs.width+60&&b.y>-60&&b.y<cvs.height+60);
+for(const b of balls){{const d=Math.hypot(head.x-b.x,head.y-b.y);if(d<head.r+b.r){{running=false;E.audio.alert();burst(head.x,head.y,'#ff6b7f');}}
+else if(d<head.r+b.r+18){{near=Math.min(999,near+0.45);score+=1;}}}}
+for(let i=0;i<tail.length;i+=4){{
+  const p=tail[i];
+  for(const b of balls){{
+    if(Math.hypot(p.x-b.x,p.y-b.y)<b.r+5){{
+      running=false;
+      E.audio.alert();
+      break;
+    }}
+  }}
+  if(!running)break;
+}}
+if(running&&tick%22===0){{score+=1;tailTarget=Math.min(96,tailTarget+1);}}
+for(const p of bursts)p.life--;bursts=bursts.filter(p=>p.life>0);scoreEl.textContent=String(score);E.hud.set({{wave:wave,hp:running?1:0,combo:Math.floor(tail.length/6),note:`tail ${{tail.length}}`}});draw();requestAnimationFrame(step);}}
 step();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0||!running){{running=false;clearInterval(timer);
-const prevBest=Math.max(0,Number(meta.best||0));meta.best=Math.max(prevBest,score);if(score>=Math.max(130,prevBest*0.9))meta.level=metaLvl+1;localStorage.setItem(metaKey,JSON.stringify(meta));
-const reward=M.resolveMission('dodge',{{score:score,wave:wave,stage:stage}});
+const reward=M.resolveMission('dodge',{{score:score,wave:wave,stage:Math.floor(tail.length/12)}});
 ctx.fillStyle='rgba(8,12,24,0.72)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 36px Segoe UI';
-ctx.fillText('Arena End',cvs.width/2-88,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Wave: '+wave+' | Meta Lv: '+(meta.level||0),cvs.width/2-158,cvs.height/2+18);
-ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('dodge'),cvs.width/2-190,cvs.height/2+44);if(M.updateSocialHint)M.updateSocialHint('dodge',score,Math.floor(score/45),wave);M.writeMissionHint('dodge');}}}},1000);
+ctx.fillText('Worm Dodge End',cvs.width/2-132,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Wave: '+wave+' | Tail: '+tail.length,cvs.width/2-168,cvs.height/2+18);
+ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('dodge'),cvs.width/2-190,cvs.height/2+44);if(M.updateSocialHint)M.updateSocialHint('dodge',score,Math.floor(tail.length/6),wave);M.writeMissionHint('dodge');}}}},1000);
 window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
         # default aim (quality-upgraded)
         return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
