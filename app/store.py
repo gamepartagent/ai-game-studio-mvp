@@ -942,7 +942,7 @@ class Store:
                     top_trends = sorted(list(self.trend_signals)[:10], key=lambda x: x.score, reverse=True)
                     trend_ids = [t.id for t in top_trends[:3]]
                     genre, concept = self._plan_game_from_meeting(m, top_trends)
-                    title = f"{genre} Sprint {len(self.game_projects) + 1}"
+                    title = self._suggest_game_title(genre, concept, top_trends)
                     gp = self.create_game_project(
                         title=title,
                         genre=genre,
@@ -1655,6 +1655,55 @@ class Store:
         if isinstance(raw, str) and raw.strip():
             return raw.strip()[:28]
         return "Arcade"
+
+    def _make_unique_project_title(self, base_title: str) -> str:
+        base = str(base_title or "").strip() or "신규 프로젝트"
+        used = {str(g.title or "").strip().lower() for g in self.game_projects.values()}
+        if base.lower() not in used:
+            return base
+        n = 2
+        while True:
+            candidate = f"{base} {n}"
+            if candidate.lower() not in used:
+                return candidate
+            n += 1
+
+    def _suggest_game_title(self, genre: str, concept: str, top_trends: List[TrendSignal]) -> str:
+        prefixes = ["네온", "하이퍼", "펄스", "아크", "스파크", "퀀텀", "플럭스"]
+        core_name = {"aim": "에임", "rhythm": "리듬", "dodge": "서바이벌"}
+        concept_text = str(concept or "").lower()
+        core = "dodge"
+        if "core_mode=aim" in concept_text:
+            core = "aim"
+        elif "core_mode=rhythm" in concept_text:
+            core = "rhythm"
+
+        trend_word = ""
+        if top_trends:
+            raw = str(top_trends[0].topic or "").strip()
+            toks = re.findall(r"[A-Za-z0-9가-힣]{2,}", raw)
+            if toks:
+                trend_word = toks[0][:10]
+        if not trend_word:
+            trend_word = random.choice(["클러치", "모멘텀", "부스트", "제로", "스톰"])
+
+        genre_short = {
+            "Arcade": "아케이드",
+            "Runner": "러시",
+            "Skill Trainer": "트레이너",
+            "Survival": "서바이벌",
+            "Rhythm": "비트",
+            "Puzzle": "퍼즐",
+        }.get(self._normalize_genre(genre), "프로젝트")
+
+        title = random.choice(
+            [
+                f"{random.choice(prefixes)} {trend_word} {core_name.get(core, '코어')}",
+                f"{trend_word} {genre_short} {core_name.get(core, '챌린지')}",
+                f"{random.choice(prefixes)} {core_name.get(core, '코어')} 챌린지",
+            ]
+        )
+        return self._make_unique_project_title(title[:34].strip())
 
     def _plan_game_from_meeting(self, meeting: Meeting, top_trends: List[TrendSignal]) -> tuple[str, str]:
         decisions = [str(x).strip() for x in (meeting.decisions or []) if str(x).strip()]
