@@ -448,6 +448,9 @@ function renderProjectsTab(){
 function renderFinalApprovalTab(){
   const el = $("tab-final_approval");
   if(!el) return;
+  const mergePending = (state.approvals || [])
+    .filter((a) => a.status === "Pending" && a.kind === "human_merge")
+    .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
 
   const rows = (state.game_projects || []).map((p) => {
     const rel = (state.releases || []).find((r) => r.id === p.release_id);
@@ -500,6 +503,22 @@ function renderFinalApprovalTab(){
           <div class="hint">대기 사유: ${esc(reasons.slice(0,3).join(", ") || "-")}</div>
         </div>
       `).join("") : `<div class="hint">대기 항목 없음</div>`}
+
+      <h3 style="margin-top:12px;">PR 최종 머지 승인</h3>
+      <div class="hint" style="margin-bottom:8px;">에이전트가 만든 PR은 여기서 승인해야 실제 머지됩니다.</div>
+      ${mergePending.length ? mergePending.map((a) => `
+        <div class="detail" style="margin-bottom:8px;">
+          <div class="kv">
+            <div>${esc(a.id)} · ${esc(a.kind)}</div><b>${esc(short(a.title, 50))}</b>
+          </div>
+          <div class="hint">${esc(short((a.payload && a.payload.pull_request_url) || "-", 90))}</div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            ${a.payload && a.payload.pull_request_url ? `<a class="btn" href="${esc(a.payload.pull_request_url)}" target="_blank" rel="noopener">PR 보기</a>` : ""}
+            <button class="btn btn-primary js-merge-apr" data-id="${esc(a.id)}">머지 승인</button>
+            <button class="btn js-merge-rej" data-id="${esc(a.id)}">거절</button>
+          </div>
+        </div>
+      `).join("") : `<div class="hint">대기 중인 PR 머지 승인 없음</div>`}
     </div>
   `;
 
@@ -508,6 +527,18 @@ function renderFinalApprovalTab(){
       const msg = prompt("최종 승인 코멘트를 입력하세요.", "출시 승인: 기본 QA/정책/KPI 게이트 확인");
       if(msg === null) return;
       await confirmDeployProject(b.dataset.id, msg);
+      await fetchState();
+    };
+  }
+  for(const b of el.querySelectorAll('.js-merge-apr')){
+    b.onclick = async () => {
+      await decideApproval(b.dataset.id, "approve");
+      await fetchState();
+    };
+  }
+  for(const b of el.querySelectorAll('.js-merge-rej')){
+    b.onclick = async () => {
+      await decideApproval(b.dataset.id, "reject");
       await fetchState();
     };
   }

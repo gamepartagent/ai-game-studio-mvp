@@ -838,7 +838,7 @@ async def decide_approval(approval_id: str, body: ApprovalDecision) -> Dict[str,
     if decision not in ("approve", "reject"):
         return {"error": "decision must be approve or reject"}
 
-    updated = store.decide_approval(approval_id, decision, decision_by="ceo")
+    updated = store.decide_approval(approval_id, decision, decision_by="human_ceo")
     await manager.broadcast({"type": "event", "data": store.event_to_dict(store.events[0])})
     await manager.broadcast({"type": "snapshot", "data": store.snapshot()})
     return {"approval": store.approval_to_dict(updated)}

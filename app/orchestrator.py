@@ -422,8 +422,8 @@ class ToolExecutor:
                     break
             if appr is None:
                 self.store.create_approval(
-                    kind="policy",
-                    title=f"Approve auto-merge PR for {project_id}",
+                    kind="human_merge",
+                    title=f"[수동] PR 머지 최종 승인 {project_id}",
                     requested_by="qa",
                     payload={
                         "autopr_merge": True,
@@ -751,6 +751,9 @@ class ToolExecutor:
         # Human handles only the final launch approval in UI.
         pending_approvals = [a for a in self.store.approvals.values() if a.status == "Pending"]
         for apr in pending_approvals:
+            # Human-only gate: PR merge approval must be decided in UI.
+            if apr.kind == "human_merge":
+                continue
             self.store.decide_approval(apr.id, "approve", decision_by="ceo")
             await self._emit_latest_event()
 
