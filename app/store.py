@@ -1650,9 +1650,20 @@ class Store:
             sampled = clean_trends[: min(3, len(clean_trends))]
             trend_hint = " + ".join([str(t.topic).strip() for t in sampled])
             concept = f"{base_concept} | Trend mix: {trend_hint}"
-            genre_candidates = [self._normalize_genre(t.genre) for t in sampled]
-            genre_candidates = [g for g in genre_candidates if g]
-            genre = random.choice(genre_candidates) if genre_candidates else "Arcade"
+            genre_candidates = [self._normalize_genre(t.genre) for t in sampled if self._normalize_genre(t.genre)]
+            # Diversity-first selection: avoid repeatedly picking the same genre.
+            recent = sorted(self.game_projects.values(), key=lambda g: g.created_at, reverse=True)[:12]
+            genre_counts: Dict[str, int] = {}
+            for p in recent:
+                genre_counts[p.genre] = genre_counts.get(p.genre, 0) + 1
+            if genre_candidates:
+                weighted: List[float] = []
+                for g in genre_candidates:
+                    scarcity = max(0.4, 2.6 - float(genre_counts.get(g, 0)) * 0.45)
+                    weighted.append(scarcity)
+                genre = random.choices(genre_candidates, weights=weighted, k=1)[0]
+            else:
+                genre = "Arcade"
             return genre, concept
         return "Arcade", base_concept
 
@@ -2044,7 +2055,21 @@ class Store:
         if len(done) < max(2, len(gp.task_ids) - 1):
             return None
         originality = self.evaluate_project_originality(project_id)
-        if float(originality.get("originality_score", 0.0)) < 60.0 or float(originality.get("imitation_risk", 0.0)) > 45.0:
+        if float(originality.get("originality_score", 0.0)) < 52.0 or float(originality.get("imitation_risk", 0.0)) > 60.0:
+            self.create_task(
+                title=f"[{gp.id}] Differentiate core loop",
+                description="유사성 위험을 낮추기 위해 핵심 메커닉/점수 루프/연출 차별화 패치를 수행합니다.",
+                type="DEV",
+                priority="P1",
+                assignee_id=None,
+            )
+            self.create_task(
+                title=f"[{gp.id}] QA novelty checklist",
+                description="기존 프로젝트와의 차별성 항목(룰/템포/피드백)을 QA 체크리스트로 검증합니다.",
+                type="QA",
+                priority="P1",
+                assignee_id=None,
+            )
             self.add_event(
                 type="game_project.release_blocked_originality",
                 actor_id=requested_by,
@@ -2193,19 +2218,27 @@ class Store:
             return "memory"
         if any(k in text for k in ["rhythm", "beat", "music", "리듬"]):
             return "rhythm"
-        n = _extract_id_num(gp.id)
-        return ["aim", "runner", "dodge", "clicker", "memory", "rhythm"][n % 6]
+        # Ambiguous concept fallback: pick the least-recently used base mode for diversity.
+        base_modes = ["aim", "runner", "dodge", "clicker", "memory", "rhythm"]
+        recent = sorted(self.game_projects.values(), key=lambda g: g.created_at, reverse=True)[:18]
+        counts = {m: 0 for m in base_modes}
+        for p in recent:
+            p_mode = str((p.game_blueprint or {}).get("mode_base") or "").strip().lower()
+            if p_mode in counts:
+                counts[p_mode] += 1
+        weights = [max(0.5, 3.2 - counts[m] * 0.55) for m in base_modes]
+        return random.choices(base_modes, weights=weights, k=1)[0]
 
     def _build_game_blueprint(self, gp: GameProject) -> Dict[str, Any]:
         mode = self._infer_demo_mode(gp)
         mode_info = self._resolve_mode_info(mode)
         n = max(1, _extract_id_num(gp.id))
-        duration = 30 + (n % 3) * 5
+        duration = 35 + (n % 5) * 5
         difficulty = 1 + (n % 4)
         lm = self.learning_memory or self._default_learning_memory()
         mode_bias = float(dict(lm.get("mode_bias", {}) or {}).get(str(mode_info["mode_base"]), 0.0))
         difficulty = max(1, min(5, difficulty + (1 if mode_bias > 0.35 else (-1 if mode_bias < -0.45 else 0))))
-        tier = max(1, min(4, int(gp.demo_build_count or 0) + 1 + (1 if mode_bias > 0.55 else 0)))
+        tier = max(1, min(5, int(gp.demo_build_count or 0) + 1 + (1 if mode_bias > 0.55 else 0)))
         themes = [
             {"id": "neon", "bg1": "#08142a", "bg2": "#101f3f", "panel": "#12274a", "line": "#2f5fa8", "accent": "#7af0ff"},
             {"id": "sunset", "bg1": "#2a1222", "bg2": "#3e1c30", "panel": "#4a2140", "line": "#8a3e66", "accent": "#ffb36b"},
@@ -2965,12 +2998,54 @@ ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+'
             base_mode = str(bp.get("mode_base") or bp.get("mode") or "aim").strip().lower()
 
         upgrade_menu = {
-            "aim": ["moving targets", "combo bonus", "critical zone", "target pattern shuffle"],
-            "runner": ["orb route", "lane hazard mix", "jump timing smoothing", "pace escalation"],
-            "dodge": ["wave escalation", "power-up spawn", "dash tuning", "homing balance"],
-            "clicker": ["combo scaler", "moving target", "multi-target burst", "tempo boost"],
-            "memory": ["sequence depth", "flash cadence", "mistake penalty tuning", "board variation"],
-            "rhythm": ["lane burst", "timing window tuning", "note density ramp", "beat accent"],
+            "aim": [
+                "moving targets",
+                "combo bonus",
+                "critical zone",
+                "target pattern shuffle",
+                "boss weakpoint phase",
+                "precision streak reward",
+            ],
+            "runner": [
+                "orb route",
+                "lane hazard mix",
+                "jump timing smoothing",
+                "pace escalation",
+                "route branching",
+                "risk-reward shortcut",
+            ],
+            "dodge": [
+                "wave escalation",
+                "power-up spawn",
+                "dash tuning",
+                "homing balance",
+                "mini-boss pattern phase",
+                "survival milestone reward",
+            ],
+            "clicker": [
+                "combo scaler",
+                "moving target",
+                "multi-target burst",
+                "tempo boost",
+                "event window multiplier",
+                "shop progression tuning",
+            ],
+            "memory": [
+                "sequence depth",
+                "flash cadence",
+                "mistake penalty tuning",
+                "board variation",
+                "pattern inversion round",
+                "memory assist decay",
+            ],
+            "rhythm": [
+                "lane burst",
+                "timing window tuning",
+                "note density ramp",
+                "beat accent",
+                "sync bonus system",
+                "drop section challenge",
+            ],
         }
         picks = upgrade_menu.get(base_mode, ["polish pass", "difficulty tuning", "feedback enhancement"])
         pick = random.choice(picks)

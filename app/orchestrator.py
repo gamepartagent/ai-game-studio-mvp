@@ -652,13 +652,15 @@ class ToolExecutor:
             if apr.status == "Approved" and not rel.final_confirmed and self.store.can_confirm_project_release(gp.id):
                 quality = self.store.evaluate_project_quality(gp.id)
                 originality = self.store.evaluate_project_originality(gp.id)
-                kpi_gate = self.store.release_kpi_gate(since_minutes=180)
+                kpi_gate = self.store.release_kpi_gate(since_minutes=180, project_id=gp.id)
                 target_builds = 4
                 originality_ok = (
-                    float(originality.get("originality_score", 0.0)) >= 65.0
-                    and float(originality.get("imitation_risk", 100.0)) <= 40.0
+                    float(originality.get("originality_score", 0.0)) >= 58.0
+                    and float(originality.get("imitation_risk", 100.0)) <= 55.0
                 )
-                if gp.demo_build_count >= target_builds and quality >= 78.0 and kpi_gate["passed"] and originality_ok:
+                low_traffic = int(kpi_gate.get("sessions", 0) or 0) < 90 and int(kpi_gate.get("installs", 0) or 0) < 25
+                kpi_ok = bool(kpi_gate.get("passed")) or (low_traffic and quality >= 82.0 and gp.demo_build_count >= 5)
+                if gp.demo_build_count >= target_builds and quality >= 76.0 and kpi_ok and originality_ok:
                     self.store.submit_project_for_human_approval(
                         gp.id,
                         reason=(
@@ -670,6 +672,13 @@ class ToolExecutor:
                     )
                     await self._emit_latest_event()
                 elif gp.demo_build_count >= target_builds and quality >= 78.0 and not originality_ok:
+                    self.store.create_task(
+                        title=f"[{gp.id}] Differentiation polish sprint",
+                        description="유사도 위험을 낮추도록 핵심 메커닉/비주얼 피드백을 차별화합니다.",
+                        type="DEV",
+                        priority="P1",
+                        assignee_id=None,
+                    )
                     self.store.add_event(
                         type="game_project.submit_blocked_originality",
                         actor_id="ceo",
@@ -679,7 +688,14 @@ class ToolExecutor:
                         source="orchestrator",
                     )
                     await self._emit_latest_event()
-                elif gp.demo_build_count >= target_builds and quality >= 78.0:
+                elif gp.demo_build_count >= target_builds and quality >= 76.0:
+                    self.store.create_task(
+                        title=f"[{gp.id}] KPI hypothesis sprint",
+                        description="온보딩/난이도/보상 루프 가설 1개를 선택해 KPI 개선 실험을 수행합니다.",
+                        type="OPS",
+                        priority="P1",
+                        assignee_id=None,
+                    )
                     self.store.add_event(
                         type="game_project.submit_blocked",
                         actor_id="ceo",
