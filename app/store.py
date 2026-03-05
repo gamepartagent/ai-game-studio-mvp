@@ -14,7 +14,7 @@ from .persistence import SnapshotSQLite
 from .role_policy import default_skills_for_agent, profile_for_agent, skill_focus_for_task
 
 KST = timezone(timedelta(hours=9))
-CORE_MODES = ("aim", "runner", "dodge")
+CORE_MODES = ("aim", "rhythm", "dodge")
 
 
 def now_iso() -> str:
@@ -2225,7 +2225,9 @@ class Store:
                 base = str(ext.get("base_mode", "aim")).strip().lower() or "aim"
                 return base if base in CORE_MODES else "aim"
         if "core_mode=runner" in text:
-            return "runner"
+            return "rhythm"
+        if "core_mode=rhythm" in text:
+            return "rhythm"
         if "core_mode=dodge" in text:
             return "dodge"
         if "core_mode=aim" in text:
@@ -2233,11 +2235,11 @@ class Store:
         if any(k in text for k in ["aim", "precision", "trainer", "에임"]):
             return "aim"
         if any(k in text for k in ["runner", "platform", "timing", "러너"]):
-            return "runner"
+            return "rhythm"
         if any(k in text for k in ["merge", "puzzle", "block", "tile", "퍼즐", "memory", "card", "match", "기억"]):
             return "dodge"
         if any(k in text for k in ["idle", "clicker", "incremental", "방치", "rhythm", "beat", "music", "리듬"]):
-            return "runner"
+            return "rhythm"
         # Ambiguous concept fallback: pick the least-recently used base mode for diversity.
         base_modes = list(CORE_MODES)
         recent = sorted(self.game_projects.values(), key=lambda g: g.created_at, reverse=True)[:18]
@@ -3072,6 +3074,12 @@ window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')locati
                 "precision streak reward",
             ],
             "runner": [
+                "beat lane dodge",
+                "tempo sync hazard",
+                "rhythm checkpoint",
+                "note timing challenge",
+            ],
+            "rhythm": [
                 "orb route",
                 "lane hazard mix",
                 "jump timing smoothing",
