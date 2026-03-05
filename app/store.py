@@ -2892,27 +2892,43 @@ const scoreEl=document.getElementById('score');const timeEl=document.getElementB
 const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}}}};
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}},updateSocialHint:()=>{{}}}};
 const mission=M.getMission('rhythm');M.writeMissionHint('rhythm');
-let running=true,t={duration},score=0,combo=0,bestCombo=0,perfect=0,good=0,miss=0,fever=0,feverTimer=0;
-const laneX=[160,290,420,550,680],use5=({tier}>=3&&'{variant}'==='burst_tap'),notes=[];let beat=0,lastJudge='READY';const judgeY=360;const laneCount=use5?5:4;
-function spawn(){{const lane=Math.floor(Math.random()*laneCount);const isLong=Math.random()<(0.14+{difficulty}*0.03);notes.push({{lane,y:-20,speed:3+Math.random()*{1+difficulty*0.45},long:isLong,len:isLong?(52+Math.random()*70):0}});}}
+let running=true,t={duration},score=0,combo=0,bestCombo=0,perfect=0,good=0,miss=0,lastJudge='READY';
+const bpm=108+Math.floor({difficulty}*3)+({tier}*6);const beatSec=60/Math.max(84,bpm);
+const perfectWin=0.08,goodWin=0.16;let startTs=performance.now();let lastCheckedBeat=0;const hitBeat=new Set();
+const dirs=[{{x:1,y:0}},{{x:0,y:1}},{{x:-1,y:0}},{{x:0,y:-1}}];const nodes=[];const totalBeats=Math.ceil(({duration}/beatSec))+3;const stepLen=40;
+function buildPath(){{let p={{x:cvs.width*0.5,y:92}};let d=1;nodes.push({{x:p.x,y:p.y}});
+for(let i=0;i<totalBeats;i++){{if(Math.random()<0.62)d=(d+(Math.random()<0.5?1:3))%4;let nx=p.x+dirs[d].x*stepLen,ny=p.y+dirs[d].y*stepLen;
+if(nx<90||nx>cvs.width-90||ny<70||ny>cvs.height-70){{d=(d+2)%4;nx=p.x+dirs[d].x*stepLen;ny=p.y+dirs[d].y*stepLen;}}
+p={{x:nx,y:ny}};nodes.push({{x:p.x,y:p.y}});}}}}
+buildPath();
+function nowBeat(){{return (performance.now()-startTs)/1000/beatSec;}}
+function judgePress(){{if(!running)return;const b=nowBeat();const target=Math.round(b);if(target<=0||target>=nodes.length)return;if(hitBeat.has(target))return;
+const dist=Math.abs(b-target);if(dist<=perfectWin){{perfect++;combo++;score+=28+Math.floor(combo/4);lastJudge='PERFECT';E.audio.success();E.vfx.burst(nodes[target].x,nodes[target].y,'#7af0ff',1.2);hitBeat.add(target);}}
+else if(dist<=goodWin){{good++;combo++;score+=16+Math.floor(combo/6);lastJudge='GOOD';E.audio.hit();E.vfx.burst(nodes[target].x,nodes[target].y,'#9dd7ff',1.0);hitBeat.add(target);}}
+else{{miss++;combo=0;score=Math.max(0,score-4);lastJudge='MISS';E.audio.alert();}}
+bestCombo=Math.max(bestCombo,combo);scoreEl.textContent=String(score);}}
+window.addEventListener('keydown',e=>{{const k=(e.key||'').toLowerCase();if(k===' '||k==='enter')judgePress();}});
+cvs.addEventListener('mousedown',()=>judgePress());
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#0f1730';ctx.fillRect(0,0,cvs.width,cvs.height);
-const lanes=(use5?laneX:laneX.slice(0,4));for(const x of lanes){{ctx.fillStyle='rgba(33,51,84,0.95)';ctx.fillRect(x-28,30,56,340);ctx.strokeStyle='rgba(122,162,255,0.24)';ctx.strokeRect(x-28,30,56,340);}}
-ctx.fillStyle='rgba(122,162,255,0.85)';ctx.fillRect(120,judgeY,580,10);if(feverTimer>0){{ctx.fillStyle='rgba(255,173,94,0.14)';ctx.fillRect(120,30,580,340);}}
-for(const n of notes){{if(n.long){{ctx.fillStyle='rgba(255,184,126,0.34)';ctx.fillRect(laneX[n.lane]-6,n.y,12,n.len);}}ctx.beginPath();ctx.arc(laneX[n.lane],n.y,14,0,Math.PI*2);ctx.fillStyle=n.long?'#ffd18a':'#ff9f7a';ctx.fill();}}
-ctx.fillStyle='#cde3ff';ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,24);ctx.fillText('판정 '+lastJudge+' | MISS '+miss,14,44);ctx.fillText('PERFECT '+perfect+' GOOD '+good+' FEVER '+Math.floor(Math.max(0,fever))+'%',14,64);}}
-window.addEventListener('keydown',e=>{{if(!running)return;const map=(use5?{{'a':0,'s':1,'d':2,'f':3,'g':4}}:{{'a':0,'s':1,'d':2,'f':3}});const lane=map[(e.key||'').toLowerCase()];if(lane===undefined)return;
-const cand=notes.filter(n=>n.lane===lane);if(!cand.length)return;const n=cand.reduce((p,c)=>Math.abs(c.y-judgeY)<Math.abs(p.y-judgeY)?c:p);
-const dist=Math.abs(n.y-judgeY);if(dist<=12){{perfect++;combo++;score+=28+Math.floor(combo/4);fever+=9;lastJudge='PERFECT';E.audio.success();E.vfx.burst(laneX[lane],judgeY,'#7af0ff',1.2);}}
-else if(dist<=24){{good++;combo++;score+=16+Math.floor(combo/6);fever+=5;lastJudge='GOOD';E.audio.hit();E.vfx.burst(laneX[lane],judgeY,'#9dd7ff',1.0);}}
-else{{miss++;combo=0;score=Math.max(0,score-5);fever=Math.max(0,fever-14);lastJudge='MISS';E.audio.alert();}}
-if(fever>=100&&feverTimer<=0){{fever=0;feverTimer=260;lastJudge='FEVER';}}if(feverTimer>0&&dist<=24)score+=8;bestCombo=Math.max(bestCombo,combo);notes.splice(notes.indexOf(n),1);scoreEl.textContent=String(score);}});
-function step(){{if(!running)return;beat++;if(beat%(use5?13:16)===0)spawn();if(beat%(use5?52:64)===0&&Math.random()<0.6)spawn();
-for(const n of notes)n.y+=n.speed+({difficulty}*0.05);for(const n of notes){{if(n.y>395){{miss++;combo=0;score=Math.max(0,score-3);lastJudge='MISS';}}}}
-for(let i=notes.length-1;i>=0;i--)if(notes[i].y>440)notes.splice(i,1);if(feverTimer>0)feverTimer--;scoreEl.textContent=String(score);E.hud.set({{wave:1+Math.floor((({duration}-t)/Math.max(1,{duration}/3))),hp:Math.max(0,5-Math.min(4,miss)),combo:combo,note:lastJudge}});draw();requestAnimationFrame(step);}}
+ctx.strokeStyle='rgba(106,156,255,0.35)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(nodes[0].x,nodes[0].y);for(let i=1;i<nodes.length;i++)ctx.lineTo(nodes[i].x,nodes[i].y);ctx.stroke();
+const b=nowBeat();const seg=Math.max(0,Math.min(nodes.length-2,Math.floor(b)));const tSeg=Math.max(0,Math.min(1,b-seg));const a=nodes[seg],c=nodes[seg+1];
+const px=a.x+(c.x-a.x)*tSeg,py=a.y+(c.y-a.y)*tSeg;const next=Math.max(1,Math.min(nodes.length-1,Math.ceil(b)));const pulse=(Math.sin((performance.now()-startTs)/120)+1)*0.5;
+for(let i=1;i<nodes.length;i++){{ctx.beginPath();ctx.arc(nodes[i].x,nodes[i].y,9,0,Math.PI*2);ctx.fillStyle=hitBeat.has(i)?'#6cf0c2':'#ffae88';ctx.fill();}}
+ctx.beginPath();ctx.arc(nodes[next].x,nodes[next].y,14+pulse*8,0,Math.PI*2);ctx.strokeStyle='rgba(255,220,140,0.8)';ctx.lineWidth=2;ctx.stroke();
+ctx.beginPath();ctx.arc(px,py,12,0,Math.PI*2);ctx.fillStyle='#8dd7ff';ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.8)';ctx.stroke();
+ctx.fillStyle='#cde3ff';ctx.font='14px Segoe UI';ctx.fillText('원버튼: 스페이스/엔터/클릭',14,24);
+ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,44);
+ctx.fillText('판정 '+lastJudge+' | PERFECT '+perfect+' GOOD '+good+' MISS '+miss,14,64);
+ctx.fillText('BPM '+Math.round(bpm)+' | Combo '+combo,14,84);}}
+function step(){{if(!running)return;const b=nowBeat();const passed=Math.floor(b-goodWin);
+for(let i=lastCheckedBeat+1;i<=passed;i++){{if(i>0&&i<nodes.length&&!hitBeat.has(i)){{miss++;combo=0;score=Math.max(0,score-2);lastJudge='MISS';}}}}
+lastCheckedBeat=Math.max(lastCheckedBeat,passed);scoreEl.textContent=String(score);
+E.hud.set({{wave:1+Math.floor((({duration}-t)/Math.max(1,{duration}/3))),hp:Math.max(0,5-Math.min(4,miss)),combo:combo,note:lastJudge}});
+draw();requestAnimationFrame(step);}}
 step();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t<=0){{running=false;clearInterval(timer);
 const reward=M.resolveMission('rhythm',{{score:score,combo:bestCombo}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
-ctx.fillText('Rhythm End',cvs.width/2-92,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
+ctx.fillText('Orbit Rhythm End',cvs.width/2-132,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
 ctx.font='16px Segoe UI';ctx.fillText('Perfect '+perfect+' | Good '+good+' | Miss '+miss,cvs.width/2-150,cvs.height/2+52);ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('rhythm'),cvs.width/2-170,cvs.height/2+76);if(M.updateSocialHint)M.updateSocialHint('rhythm',score,bestCombo,Math.max(1,Math.floor(perfect/6)));M.writeMissionHint('rhythm');}}}},1000);"""
         if mode == "runner":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
