@@ -107,7 +107,7 @@ ROLE_PROFILES: Dict[str, RoleProfile] = {
         allowed_tools={"create_task", "update_task", "set_agent_state", "run_task_executor"},
         can_create_task_types={"DEV"},
         can_request_approval_kinds=set(),
-        can_execute_executors={"dev_dryrun", "dev_test_build", "dev_git_ops", "project_autoupgrade"},
+        can_execute_executors={"dev_dryrun", "dev_test_build", "dev_git_ops", "dev_github_pr", "project_autoupgrade"},
     ),
     # E) QA / Release Manager
     "QA": RoleProfile(
@@ -160,14 +160,14 @@ AGENT_PROFILE_OVERRIDES: Dict[str, Dict[str, object]] = {
         "title": "Senior Client Engineer",
         "level": "Senior IC",
         "department": "Engineering(Client)",
-        "can_execute_executors": {"dev_dryrun", "dev_test_build", "project_autoupgrade"},
+        "can_execute_executors": {"dev_dryrun", "dev_test_build", "dev_github_pr", "project_autoupgrade"},
         "skills": {"client_gameplay": 90.0, "performance": 84.0, "backend_api": 66.0},
     },
     "dev_b": {
         "title": "Backend/Tools Engineer",
         "level": "Senior IC",
         "department": "Engineering(Backend/Tools)",
-        "can_execute_executors": {"dev_dryrun", "dev_test_build", "dev_git_ops"},
+        "can_execute_executors": {"dev_dryrun", "dev_test_build", "dev_git_ops", "dev_github_pr"},
         "skills": {"backend_api": 89.0, "build_tooling": 90.0, "client_gameplay": 65.0},
     },
     "qa": {

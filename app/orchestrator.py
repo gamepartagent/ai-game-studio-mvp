@@ -85,6 +85,12 @@ class ToolExecutor:
         self.project_target_builds = max(4, int(os.getenv("STUDIO_PROJECT_TARGET_BUILDS", "8")))
         self.project_upgrade_chance = max(0.05, min(1.0, float(os.getenv("STUDIO_PROJECT_UPGRADE_CHANCE", "0.78"))))
         self.release_upgrade_chance = max(0.05, min(1.0, float(os.getenv("STUDIO_RELEASE_UPGRADE_CHANCE", "0.55"))))
+        self.enable_github_autopr = str(os.getenv("STUDIO_ENABLE_GITHUB_AUTOPR", "0")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         self.executors = TaskExecutorRegistry()
         self._meeting_tick = 0
         self._experiment_tick = 0
@@ -1059,6 +1065,25 @@ class ToolExecutor:
                                         "config": {
                                             "operation": random.choice(["status", "diff"]),
                                             "timeout_sec": 120,
+                                        },
+                                    },
+                                }
+                            )
+                            await self._emit_latest_event()
+                        if self.enable_github_autopr and random.random() < 0.45:
+                            await self.execute(
+                                {
+                                    "tool": "run_task_executor",
+                                    "args": {
+                                        "task_id": dev_tasks[0],
+                                        "executor": "dev_github_pr",
+                                        "actor_id": "dev_b",
+                                        "config": {
+                                            "project_id": gp.id,
+                                            "message": f"auto: {gp.id} upgrade pass",
+                                            "title": f"[AUTO] {gp.id} gameplay upgrade",
+                                            "base_branch": os.getenv("STUDIO_GIT_BASE_BRANCH", "main"),
+                                            "timeout_sec": 240,
                                         },
                                     },
                                 }
