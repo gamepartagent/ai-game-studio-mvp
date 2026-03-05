@@ -56,6 +56,15 @@ TREND_SIGNALS = [
 ]
 
 
+TREND_SCOUT_SIGNALS = [
+    ("High replay micro-session loop", "Arcade", 0.83, "scout:session-lab", "Fast retry loops are trending up."),
+    ("Precision challenge clips rising", "Skill Trainer", 0.79, "scout:clipboard", "Shareable precision clips are increasing."),
+    ("Wave survival mini-boss demand", "Survival", 0.81, "scout:genre-watch", "Mini-boss wave loops show strong traction."),
+    ("Beat dodge challenge growth", "Rhythm", 0.78, "scout:music-watch", "Beat dodge challenge posts are rising."),
+    ("Daily mission streak retention", "Arcade", 0.75, "scout:retention-lab", "Daily streaks improve return probability."),
+]
+
+
 class ToolExecutor:
     """
     Tool layer for orchestrator actions.
@@ -77,6 +86,7 @@ class ToolExecutor:
         self._experiment_tick = 0
         self._kpi_tick = 0
         self._trend_tick = 0
+        self._trend_scout_tick = 0
         self._project_tick = 0
         self._release_tick = 0
         self._learning_tick = 0
@@ -856,7 +866,7 @@ class ToolExecutor:
 
     async def auto_scan_trends(self) -> None:
         self._trend_tick += 1
-        if self._trend_tick % 5 != 0:
+        if self._trend_tick % 3 != 0:
             return
         for _ in range(2):
             topic, genre, score, source, summary = random.choice(TREND_SIGNALS)
@@ -868,7 +878,7 @@ class ToolExecutor:
                 source=source,
                 summary=summary,
             )
-        added = self.store.refresh_mode_extensions_from_trends(max_new=1)
+        added = self.store.refresh_mode_extensions_from_trends(max_new=2)
         if added > 0:
             self.store.add_event(
                 type="mode_extension.refresh_completed",
@@ -878,6 +888,64 @@ class ToolExecutor:
                 payload={"added": added, "total": len(self.store.mode_extensions)},
                 source="orchestrator",
             )
+        await self._emit_latest_event()
+
+    async def auto_trend_scout(self) -> None:
+        self._trend_scout_tick += 1
+        if self._trend_scout_tick % 2 != 0:
+            return
+
+        sampled = random.sample(TREND_SCOUT_SIGNALS, k=min(3, len(TREND_SCOUT_SIGNALS)))
+        top_score = 0.0
+        top_topic = ""
+        for topic, genre, score, source, summary in sampled:
+            jitter = random.uniform(-0.05, 0.08)
+            signal_score = max(0.0, min(1.0, score + jitter))
+            if signal_score >= top_score:
+                top_score = signal_score
+                top_topic = topic
+            self.store.add_trend_signal(
+                topic=topic,
+                genre=genre,
+                score=signal_score,
+                source=source,
+                summary=summary,
+            )
+
+        mkt_trend_work = [
+            t
+            for t in self.store.tasks.values()
+            if t.type == "MKT"
+            and t.status in {"Todo", "Doing"}
+            and ("trend" in str(t.title).lower() or "유행" in str(t.title))
+        ]
+        if not mkt_trend_work:
+            self.store.create_task(
+                title="Trend digest and concept shortlist",
+                description="Collect latest trend signals and propose 3 differentiated game concepts.",
+                type="MKT",
+                priority="P1",
+                assignee_id="mkt",
+            )
+
+        meetings = [m for m in self.store.meetings.values() if m.status in {"Scheduled", "Ongoing"}]
+        if top_score >= 0.82 and not meetings:
+            self.store.create_meeting(
+                title="Trend Scout Sync",
+                agenda=f"High-signal trend review and concept mapping: {top_topic}",
+                participant_ids=["ceo", "mkt", "ops", "dev_a"],
+                created_by="mkt",
+                source="orchestrator",
+            )
+
+        self.store.add_event(
+            type="trend.scout_completed",
+            actor_id="mkt",
+            summary=f"Trend scout captured {len(sampled)} signals",
+            refs={},
+            payload={"top_topic": top_topic, "top_score": round(top_score, 2)},
+            source="orchestrator",
+        )
         await self._emit_latest_event()
 
     async def auto_drive_game_factory(self) -> None:
@@ -1022,6 +1090,7 @@ async def run_orchestrator(store: Store, emit: Callable[[Dict[str, Any]], Awaita
             # 0) Gate maintenance + execute approved high-risk actions
             await tools.process_action_gate_timeouts()
             await tools.execute_approved_action_gates()
+            await tools.auto_trend_scout()
             await tools.auto_scan_trends()
             await tools.auto_manage_meetings()
             await tools.auto_drive_game_factory()
