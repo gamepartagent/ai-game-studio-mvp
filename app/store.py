@@ -3029,30 +3029,37 @@ let score=0,t={duration},running=true,combo=0,bestCombo=0,mult=1.0,stage=1;
 let headshots=0,bodyshots=0,legshots=0,misses=0,lastShot='READY';
 let bots=[];let bursts=[];
 function rr(min,max){{return min+Math.random()*(max-min);}}
-function mkBot(boost=1){{const s=0.86+Math.random()*0.48;const h=76*s;const w=32*s;const headR=11*s;const sp=(0.9+0.25*{tier})*boost;return{{x:rr(70,cvs.width-70),y:rr(112,cvs.height-72),vx:rr(-sp,sp),vy:rr(-sp,sp),w,h,headR,ttl:420+Math.floor(Math.random()*220),phase:Math.random()*6.28,armor:1+Math.floor(Math.random()*2)}};}}
+function mkBot(boost=1){{const s=0.9+Math.random()*0.44;const h=82*s;const w=34*s;const headR=11.5*s;const sp=(1.0+0.25*{tier})*boost;return{{x:rr(76,cvs.width-76),y:rr(120,cvs.height-78),vx:rr(-sp,sp),vy:rr(-sp,sp),w,h,headR,ttl:420+Math.floor(Math.random()*220),phase:Math.random()*6.28,armor:1+Math.floor(Math.random()*2),hue:190+Math.floor(Math.random()*70)}};}}
 function spawnBots(){{bots=[mkBot(1)];if(allowDual)bots.push(mkBot(1.1));}}
 function burst(x,y,col){{bursts.push({{x,y,life:26,col}});}}
 function updateBursts(){{for(const b of bursts)b.life--;bursts=bursts.filter(b=>b.life>0);}}
 function botZones(b){{const head={{x:b.x,y:b.y-b.h*0.58,r:b.headR}};const body={{x:b.x,y:b.y-b.h*0.15,w:b.w,h:b.h*0.46}};const leg={{x:b.x,y:b.y+b.h*0.28,w:b.w*0.9,h:b.h*0.34}};return{{head,body,leg}};}}
 function ptRect(x,y,r){{return x>=r.x-r.w/2&&x<=r.x+r.w/2&&y>=r.y-r.h/2&&y<=r.y+r.h/2;}}
 function hitZone(x,y,b){{const z=botZones(b);if(Math.hypot(x-z.head.x,y-z.head.y)<=z.head.r)return'head';if(ptRect(x,y,z.body))return'body';if(ptRect(x,y,z.leg))return'leg';return'';}}
-function drawBot(b){{const z=botZones(b);const bob=Math.sin(b.phase)*2.4;const bodyY=z.body.y+bob;const legY=z.leg.y+bob;const headY=z.head.y+bob;
-ctx.fillStyle='rgba(10,18,38,0.45)';ctx.beginPath();ctx.ellipse(b.x,legY+z.leg.h*0.7,b.w*0.68,6,0,0,Math.PI*2);ctx.fill();
-ctx.fillStyle='rgba(90,120,168,0.14)';ctx.fillRect(b.x-34,headY-b.h*0.36,68,b.h*0.98);
-const g=ctx.createLinearGradient(0,bodyY-z.body.h/2,0,bodyY+z.body.h/2);g.addColorStop(0,'#7ed0ff');g.addColorStop(1,'#4e8dd4');
-ctx.fillStyle=g;ctx.fillRect(z.body.x-z.body.w/2,bodyY-z.body.h/2,z.body.w,z.body.h);
-ctx.fillStyle='rgba(255,255,255,0.24)';ctx.fillRect(z.body.x-z.body.w*0.35,bodyY-z.body.h*0.34,z.body.w*0.7,z.body.h*0.12);
-ctx.fillStyle='#9be4bd';ctx.fillRect(z.leg.x-z.leg.w/2,legY-z.leg.h/2,z.leg.w,z.leg.h);
-ctx.fillStyle='#79b3de';ctx.fillRect(z.body.x-z.body.w*0.78,bodyY-z.body.h*0.3,z.body.w*0.22,z.body.h*0.5);
-ctx.fillRect(z.body.x+z.body.w*0.56,bodyY-z.body.h*0.3,z.body.w*0.22,z.body.h*0.5);
+function drawBot(b){{const z=botZones(b);const bob=Math.sin(b.phase)*2.8;const sway=Math.cos(b.phase*0.7)*1.8;const bodyY=z.body.y+bob;const legY=z.leg.y+bob;const headY=z.head.y+bob;const hc=b.hue||210;
+ctx.fillStyle='rgba(8,14,28,0.42)';ctx.beginPath();ctx.ellipse(b.x,legY+z.leg.h*0.72,b.w*0.78,7,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='rgba(80,110,168,0.10)';ctx.fillRect(b.x-40,headY-b.h*0.42,80,b.h*1.06);
+ctx.strokeStyle='rgba(120,170,255,0.24)';ctx.strokeRect(b.x-40,headY-b.h*0.42,80,b.h*1.06);
+const bodyGrad=ctx.createLinearGradient(0,bodyY-z.body.h/2,0,bodyY+z.body.h/2);bodyGrad.addColorStop(0,`hsl(${{hc}},88%,74%)`);bodyGrad.addColorStop(1,`hsl(${{hc}},55%,48%)`);
+ctx.fillStyle=bodyGrad;ctx.fillRect(z.body.x-z.body.w/2,bodyY-z.body.h/2,z.body.w,z.body.h);
+ctx.fillStyle='rgba(255,255,255,0.26)';ctx.fillRect(z.body.x-z.body.w*0.36,bodyY-z.body.h*0.36,z.body.w*0.72,z.body.h*0.12);
+ctx.fillStyle='rgba(90,145,210,0.86)';ctx.fillRect(z.body.x-z.body.w*0.86+sway,bodyY-z.body.h*0.28,z.body.w*0.24,z.body.h*0.54);
+ctx.fillRect(z.body.x+z.body.w*0.62+sway,bodyY-z.body.h*0.28,z.body.w*0.24,z.body.h*0.54);
+ctx.fillStyle='rgba(126,232,184,0.92)';ctx.fillRect(z.leg.x-z.leg.w/2,legY-z.leg.h/2,z.leg.w,z.leg.h);
+ctx.fillStyle='rgba(38,62,98,0.78)';ctx.fillRect(z.leg.x-z.leg.w*0.5,legY+z.leg.h*0.12,z.leg.w,4);
 ctx.beginPath();ctx.arc(z.head.x,headY,z.head.r,0,Math.PI*2);ctx.fillStyle='#ffd3ad';ctx.fill();
-ctx.beginPath();ctx.arc(z.head.x,headY,z.head.r*0.82,Math.PI,Math.PI*2);ctx.strokeStyle='rgba(100,200,255,0.85)';ctx.lineWidth=2;ctx.stroke();
-ctx.fillStyle='#1f3555';ctx.fillRect(z.head.x-z.head.r*0.45,headY-z.head.r*0.1,z.head.r*0.9,3);
-ctx.fillStyle='rgba(255,255,255,0.24)';ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1;ctx.strokeRect(z.body.x-z.body.w/2,bodyY-z.body.h/2,z.body.w,z.body.h);
-if(b.armor>1){{ctx.fillStyle='rgba(255,196,104,0.75)';ctx.fillRect(z.body.x-z.body.w*0.14,bodyY-z.body.h*0.08,z.body.w*0.28,4);}}
+ctx.beginPath();ctx.arc(z.head.x,headY,z.head.r*0.86,Math.PI,Math.PI*2);ctx.strokeStyle=`hsla(${{hc}},90%,72%,0.9)`;ctx.lineWidth=2.2;ctx.stroke();
+ctx.fillStyle='#1d314f';ctx.fillRect(z.head.x-z.head.r*0.52,headY-z.head.r*0.14,z.head.r*1.04,3.4);
+ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillRect(z.head.x-z.head.r*0.18,headY-z.head.r*0.42,z.head.r*0.36,2.2);
+ctx.fillStyle='rgba(46,58,84,0.85)';ctx.fillRect(z.body.x+z.body.w*0.44,bodyY-z.body.h*0.08,z.body.w*0.38,5);
+ctx.fillRect(z.body.x+z.body.w*0.76,bodyY-z.body.h*0.12,11,8);
+ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1;ctx.strokeRect(z.body.x-z.body.w/2,bodyY-z.body.h/2,z.body.w,z.body.h);
+if(b.armor>1){{ctx.fillStyle='rgba(255,196,104,0.78)';ctx.fillRect(z.body.x-z.body.w*0.16,bodyY-z.body.h*0.06,z.body.w*0.32,4.4);}}
 }}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#16223f');g.addColorStop(1,'#0f172b');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
 for(let i=0;i<18;i++){{const y=(i*28+(Date.now()*0.03)%28)%cvs.height;ctx.fillStyle='rgba(120,170,255,0.08)';ctx.fillRect(0,y,cvs.width,1);}}
+for(let i=0;i<6;i++){{const x=80+i*130;ctx.fillStyle='rgba(98,132,190,0.22)';ctx.fillRect(x,66,6,282);ctx.fillStyle='rgba(148,178,232,0.16)';ctx.fillRect(x-18,66,42,8);}}
+ctx.fillStyle='rgba(88,118,176,0.26)';ctx.fillRect(58,348,704,8);
 for(const b of bots)drawBot(b);for(const b of bursts){{ctx.beginPath();ctx.arc(b.x,b.y,34-b.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{b.life/28}})`;ctx.stroke();}}
 ctx.fillStyle='#d9eaff';ctx.font='14px Segoe UI';ctx.fillText('x'+mult.toFixed(1)+' combo '+combo+' | '+lastShot,14,24);
 ctx.fillText('헤드 '+headshots+' 몸통 '+bodyshots+' 다리 '+legshots+' 미스 '+misses,14,44);
