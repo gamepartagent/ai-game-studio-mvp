@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import random
 from datetime import datetime, timezone
@@ -91,6 +92,12 @@ class ToolExecutor:
             "yes",
             "on",
         }
+        self.enable_github_automerge = str(os.getenv("STUDIO_ENABLE_GITHUB_AUTOMERGE", "0")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         self.executors = TaskExecutorRegistry()
         self._meeting_tick = 0
         self._experiment_tick = 0
@@ -100,6 +107,7 @@ class ToolExecutor:
         self._project_tick = 0
         self._release_tick = 0
         self._learning_tick = 0
+        self._pr_merge_tick = 0
 
     def _is_high_risk(self, action: Dict[str, Any]) -> bool:
         return self.risk_policy.is_high_risk(action)
@@ -357,6 +365,111 @@ class ToolExecutor:
 
     async def _emit_latest_event(self) -> None:
         await self.emit({"type": "event", "data": self.store.event_to_dict(self.store.events[0])})
+
+    def _latest_artifact_content(self, artifact_id: str) -> Dict[str, Any]:
+        art = self.store.artifacts.get(artifact_id)
+        if not art or not art.versions:
+            return {}
+        last = art.versions[-1]
+        path = str(last.get("file_path", "") or "").strip()
+        if not path:
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            return dict(payload.get("content", {}) or {})
+        except Exception:
+            return {}
+
+    async def auto_manage_autopr_merges(self) -> None:
+        self._pr_merge_tick += 1
+        if not self.enable_github_automerge:
+            return
+        if self._pr_merge_tick % 3 != 0:
+            return
+
+        # Most recent PR artifacts first.
+        arts = sorted(self.store.artifacts.values(), key=lambda a: a.updated_at, reverse=True)
+        for art in arts[:40]:
+            content = self._latest_artifact_content(art.id)
+            if str(content.get("executor", "")) != "dev_github_pr":
+                continue
+            pr_url = str(content.get("pull_request_url", "")).strip()
+            project_id = str(content.get("project_id", "")).strip().upper()
+            if not pr_url or not project_id or project_id not in self.store.game_projects:
+                continue
+            gp = self.store.game_projects[project_id]
+            # Gate 1: QA done for this project.
+            qa_done = any(
+                tid in self.store.tasks
+                and self.store.tasks[tid].type == "QA"
+                and self.store.tasks[tid].status == "Done"
+                for tid in (gp.task_ids or [])
+            )
+            if not qa_done:
+                continue
+
+            # Gate 2: CEO approval for this PR merge.
+            appr = None
+            for a in self.store.approvals.values():
+                p = a.payload or {}
+                if (
+                    a.kind == "policy"
+                    and str(p.get("autopr_merge", "")).lower() in {"1", "true", "yes", "on"}
+                    and str(p.get("artifact_id", "")).strip() == art.id
+                ):
+                    appr = a
+                    break
+            if appr is None:
+                self.store.create_approval(
+                    kind="policy",
+                    title=f"Approve auto-merge PR for {project_id}",
+                    requested_by="qa",
+                    payload={
+                        "autopr_merge": True,
+                        "artifact_id": art.id,
+                        "project_id": project_id,
+                        "pull_request_url": pr_url,
+                        "merge_attempted": False,
+                    },
+                )
+                await self._emit_latest_event()
+                continue
+
+            if appr.status != "Approved":
+                continue
+            payload = appr.payload or {}
+            if bool(payload.get("merge_attempted", False)):
+                continue
+
+            task_id = art.task_id
+            if not task_id or task_id not in self.store.tasks:
+                task_id = next((tid for tid in gp.task_ids if tid in self.store.tasks), "")
+            if not task_id:
+                continue
+
+            payload["merge_attempted"] = True
+            payload["merge_attempted_at"] = datetime.now(timezone.utc).isoformat()
+            appr.payload = payload
+
+            await self.execute(
+                {
+                    "tool": "run_task_executor",
+                    "args": {
+                        "task_id": task_id,
+                        "executor": "dev_github_merge",
+                        "actor_id": "dev_b",
+                        "config": {
+                            "project_id": project_id,
+                            "pull_request_url": pr_url,
+                            "repo": os.getenv("STUDIO_GITHUB_REPO", os.getenv("GITHUB_REPOSITORY", "")),
+                            "merge_method": "squash",
+                            "timeout_sec": 240,
+                        },
+                    },
+                }
+            )
+            await self._emit_latest_event()
 
     async def execute_approved_action_gates(self) -> None:
         approved = [
@@ -1176,6 +1289,7 @@ async def run_orchestrator(store: Store, emit: Callable[[Dict[str, Any]], Awaita
             await tools.auto_optimize_experiments()
             await tools.auto_generate_kpi_events()
             await tools.auto_manage_releases()
+            await tools.auto_manage_autopr_merges()
             await tools.auto_post_release_improvements()
             await tools.auto_refine_learning_policy()
 

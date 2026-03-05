@@ -349,6 +349,150 @@ class DevGitHubPRExecutor(_CommandExecutor):
         )
 
 
+class DevGitHubMergeExecutor(BaseTaskExecutor):
+    name = "dev_github_merge"
+
+    def run(self, store: Store, task_id: str, actor_id: str, config: Dict[str, Any] | None = None) -> ExecutionResult:
+        if task_id not in store.tasks:
+            return ExecutionResult(ok=False, summary=f"task not found: {task_id}")
+        cfg = config or {}
+        gh_available = shutil.which("gh") is not None
+        gh_repo = str(cfg.get("repo", os.getenv("STUDIO_GITHUB_REPO", os.getenv("GITHUB_REPOSITORY", "")))).strip()
+        gh_token = str(cfg.get("token", os.getenv("GITHUB_TOKEN", ""))).strip()
+        timeout_sec = int(cfg.get("timeout_sec", 240))
+        if not gh_available and (not gh_repo or not gh_token):
+            return ExecutionResult(
+                ok=False,
+                summary="cannot merge PR: neither gh cli nor GITHUB_TOKEN+repo configured",
+            )
+
+        pr_url = str(cfg.get("pull_request_url", "")).strip()
+        pr_number = int(cfg.get("pr_number", 0) or 0)
+        if pr_number <= 0 and pr_url:
+            m = re.search(r"/pull/(\d+)", pr_url)
+            if m:
+                pr_number = int(m.group(1))
+        if pr_number <= 0:
+            return ExecutionResult(ok=False, summary="dev_github_merge requires pr_number or pull_request_url")
+
+        merge_method = str(cfg.get("merge_method", "squash")).strip() or "squash"
+        title = str(cfg.get("title", f"[AUTO] Merge PR #{pr_number}")).strip()
+        body = str(cfg.get("body", "Auto-merged by agent orchestration after QA+CEO gate")).strip()
+        runs: list[Dict[str, Any]] = []
+        cmd_runner = _CommandExecutor()
+        cwd = cmd_runner._workdir()
+
+        if gh_available:
+            if pr_url:
+                cmd = f"gh pr merge {pr_url} --{merge_method} --delete-branch"
+            elif gh_repo:
+                cmd = f"gh pr merge {pr_number} --repo {gh_repo} --{merge_method} --delete-branch"
+            else:
+                cmd = f"gh pr merge {pr_number} --{merge_method} --delete-branch"
+            runs.append(cmd_runner._run_cmd(command=cmd, cwd=cwd, timeout_sec=timeout_sec))
+            if runs[-1]["returncode"] == 0:
+                task = store.tasks[task_id]
+                artifact = store.create_artifact(
+                    title=f"GitHub merge report for {task.id}",
+                    created_by=actor_id,
+                    task_id=task_id,
+                    content={
+                        "executor": self.name,
+                        "pull_request_url": pr_url,
+                        "pr_number": pr_number,
+                        "repo": gh_repo,
+                        "merged": True,
+                        "merge_method": merge_method,
+                        "runs": runs,
+                    },
+                )
+                return ExecutionResult(
+                    ok=True,
+                    summary=f"executor {self.name} merged PR #{pr_number}: artifact {artifact.id}",
+                    artifact_id=artifact.id,
+                    details={"pr_number": pr_number, "pull_request_url": pr_url, "repo": gh_repo},
+                )
+
+        if not gh_repo or not gh_token:
+            task = store.tasks[task_id]
+            artifact = store.create_artifact(
+                title=f"GitHub merge report for {task.id}",
+                created_by=actor_id,
+                task_id=task_id,
+                content={
+                    "executor": self.name,
+                    "pull_request_url": pr_url,
+                    "pr_number": pr_number,
+                    "repo": gh_repo,
+                    "merged": False,
+                    "merge_method": merge_method,
+                    "runs": runs,
+                },
+            )
+            return ExecutionResult(
+                ok=False,
+                summary=f"executor {self.name} failed: missing repo/token for API merge",
+                artifact_id=artifact.id,
+                details={"pr_number": pr_number},
+            )
+
+        api_raw = ""
+        api_ok = False
+        api_err = ""
+        try:
+            payload = {
+                "commit_title": title,
+                "commit_message": body,
+                "merge_method": merge_method,
+            }
+            req = urlrequest.Request(
+                url=f"https://api.github.com/repos/{gh_repo}/pulls/{pr_number}/merge",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {gh_token}",
+                    "Accept": "application/vnd.github+json",
+                    "Content-Type": "application/json",
+                },
+                method="PUT",
+            )
+            with urlrequest.urlopen(req, timeout=max(10, timeout_sec)) as resp:
+                api_raw = resp.read().decode("utf-8", errors="replace")
+                parsed = json.loads(api_raw or "{}")
+                api_ok = bool(parsed.get("merged", False))
+        except urlerror.HTTPError as exc:
+            api_err = str(exc)
+        except Exception as exc:
+            api_err = str(exc)
+
+        task = store.tasks[task_id]
+        artifact = store.create_artifact(
+            title=f"GitHub merge report for {task.id}",
+            created_by=actor_id,
+            task_id=task_id,
+            content={
+                "executor": self.name,
+                "pull_request_url": pr_url,
+                "pr_number": pr_number,
+                "repo": gh_repo,
+                "merged": api_ok,
+                "merge_method": merge_method,
+                "api_response": api_raw[-4000:],
+                "api_error": api_err,
+                "runs": runs,
+            },
+        )
+        return ExecutionResult(
+            ok=api_ok,
+            summary=(
+                f"executor {self.name} merged PR #{pr_number}: artifact {artifact.id}"
+                if api_ok
+                else f"executor {self.name} merge failed for PR #{pr_number}: artifact {artifact.id}"
+            ),
+            artifact_id=artifact.id,
+            details={"pr_number": pr_number, "pull_request_url": pr_url, "repo": gh_repo},
+        )
+
+
 class ProjectAutoUpgradeExecutor(BaseTaskExecutor):
     name = "project_autoupgrade"
 
@@ -405,6 +549,7 @@ class TaskExecutorRegistry:
         self.register(DevTestBuildExecutor())
         self.register(DevGitOpsExecutor())
         self.register(DevGitHubPRExecutor())
+        self.register(DevGitHubMergeExecutor())
         self.register(ProjectAutoUpgradeExecutor())
 
     def register(self, executor: BaseTaskExecutor) -> None:
