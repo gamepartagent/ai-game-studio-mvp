@@ -573,6 +573,7 @@ class ToolExecutor:
         meta = {"project_id": target_project_id} if target_project_id else {}
         installs = random.randint(12, 40)
         sessions = random.randint(installs, installs * 3)
+        mission_completes = random.randint(max(2, sessions // 10), max(4, sessions // 2))
         purchases = random.randint(0, max(1, installs // 4))
         revenue = round(purchases * random.uniform(0.99, 5.49), 2)
 
@@ -587,6 +588,14 @@ class ToolExecutor:
         for _ in range(sessions):
             self.store.add_kpi_event(
                 "engagement.session_start",
+                user_id=f"u_{random.randint(1, 500000)}",
+                value=1,
+                meta=meta,
+                source="orchestrator",
+            )
+        for _ in range(mission_completes):
+            self.store.add_kpi_event(
+                "engagement.mission_complete",
                 user_id=f"u_{random.randint(1, 500000)}",
                 value=1,
                 meta=meta,
@@ -653,7 +662,7 @@ class ToolExecutor:
                 quality = self.store.evaluate_project_quality(gp.id)
                 originality = self.store.evaluate_project_originality(gp.id)
                 kpi_gate = self.store.release_kpi_gate(since_minutes=180, project_id=gp.id)
-                target_builds = 4
+                target_builds = 5
                 originality_ok = (
                     float(originality.get("originality_score", 0.0)) >= 58.0
                     and float(originality.get("imitation_risk", 100.0)) <= 55.0
@@ -983,7 +992,11 @@ class ToolExecutor:
                     await self._emit_latest_event()
                 # only request release after a minimum quality pass
                 quality = self.store.evaluate_project_quality(gp.id)
-                if gp.demo_build_count >= target_builds and len(done) >= max(2, len(gp.task_ids) - 1) and quality >= 70.0:
+                if (
+                    (gp.demo_build_count >= target_builds or (gp.demo_build_count >= 4 and quality >= 84.0))
+                    and len(done) >= max(2, len(gp.task_ids) - 1)
+                    and quality >= 72.0
+                ):
                     self.store.try_prepare_project_release(gp.id, requested_by="qa")
                     await self._emit_latest_event()
                 continue

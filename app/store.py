@@ -14,6 +14,7 @@ from .persistence import SnapshotSQLite
 from .role_policy import default_skills_for_agent, profile_for_agent, skill_focus_for_task
 
 KST = timezone(timedelta(hours=9))
+CORE_MODES = ("aim", "runner", "dodge")
 
 
 def now_iso() -> str:
@@ -1156,20 +1157,31 @@ class Store:
 
         installs = 0
         sessions = 0
+        mission_completes = 0
         revenue = 0.0
         for e in filtered:
             if e.event_type == "acquisition.install":
                 installs += 1
             elif e.event_type == "engagement.session_start":
                 sessions += 1
+            elif e.event_type in {"engagement.mission_complete", "engagement.level_complete"}:
+                mission_completes += 1
             elif e.event_type in {"revenue", "purchase", "iap_revenue"}:
                 revenue += float(e.value)
         session_per_install = (sessions / installs) if installs > 0 else 0.0
+        mission_complete_rate = (mission_completes / sessions) if sessions > 0 else 0.0
         score = 0.0
-        score += min(38.0, installs * 0.75)
-        score += min(42.0, session_per_install * 21.0)
-        score += min(20.0, revenue * 3.0)
-        passed = (installs >= 8 and sessions >= 14 and revenue >= 2.0 and session_per_install >= 1.1)
+        score += min(34.0, installs * 0.68)
+        score += min(34.0, session_per_install * 18.0)
+        score += min(18.0, mission_complete_rate * 120.0)
+        score += min(14.0, revenue * 2.2)
+        passed = (
+            installs >= 6
+            and sessions >= 12
+            and session_per_install >= 1.05
+            and mission_complete_rate >= 0.12
+            and revenue >= 1.2
+        )
         return {
             "passed": bool(passed),
             "score": round(min(100.0, score), 1),
@@ -1177,6 +1189,8 @@ class Store:
             "project_id": project_id or "",
             "installs": installs,
             "sessions": sessions,
+            "mission_completes": mission_completes,
+            "mission_complete_rate": round(mission_complete_rate, 3),
             "revenue_total": round(revenue, 2),
             "session_per_install": round(session_per_install, 2),
         }
@@ -1664,6 +1678,9 @@ class Store:
                 genre = random.choices(genre_candidates, weights=weighted, k=1)[0]
             else:
                 genre = "Arcade"
+            # Keep production focus on three core loops while preserving genre flavor in concept.
+            core_mode_hint = random.choice(CORE_MODES)
+            concept = f"{concept} | core_mode={core_mode_hint}"
             return genre, concept
         return "Arcade", base_concept
 
@@ -2205,21 +2222,24 @@ class Store:
         for ext in self.mode_extensions:
             keys = [str(k).strip().lower() for k in (ext.get("keywords", []) or []) if str(k).strip()]
             if keys and any(k in text for k in keys):
-                return str(ext.get("mode_id", "aim")).strip().lower() or "aim"
+                base = str(ext.get("base_mode", "aim")).strip().lower() or "aim"
+                return base if base in CORE_MODES else "aim"
+        if "core_mode=runner" in text:
+            return "runner"
+        if "core_mode=dodge" in text:
+            return "dodge"
+        if "core_mode=aim" in text:
+            return "aim"
         if any(k in text for k in ["aim", "precision", "trainer", "에임"]):
             return "aim"
         if any(k in text for k in ["runner", "platform", "timing", "러너"]):
             return "runner"
-        if any(k in text for k in ["merge", "puzzle", "block", "tile", "퍼즐"]):
-            return "memory"
-        if any(k in text for k in ["idle", "clicker", "incremental", "방치"]):
-            return "clicker"
-        if any(k in text for k in ["memory", "card", "match", "기억"]):
-            return "memory"
-        if any(k in text for k in ["rhythm", "beat", "music", "리듬"]):
-            return "rhythm"
+        if any(k in text for k in ["merge", "puzzle", "block", "tile", "퍼즐", "memory", "card", "match", "기억"]):
+            return "dodge"
+        if any(k in text for k in ["idle", "clicker", "incremental", "방치", "rhythm", "beat", "music", "리듬"]):
+            return "runner"
         # Ambiguous concept fallback: pick the least-recently used base mode for diversity.
-        base_modes = ["aim", "runner", "dodge", "clicker", "memory", "rhythm"]
+        base_modes = list(CORE_MODES)
         recent = sorted(self.game_projects.values(), key=lambda g: g.created_at, reverse=True)[:18]
         counts = {m: 0 for m in base_modes}
         for p in recent:
@@ -2239,6 +2259,17 @@ class Store:
         mode_bias = float(dict(lm.get("mode_bias", {}) or {}).get(str(mode_info["mode_base"]), 0.0))
         difficulty = max(1, min(5, difficulty + (1 if mode_bias > 0.35 else (-1 if mode_bias < -0.45 else 0))))
         tier = max(1, min(5, int(gp.demo_build_count or 0) + 1 + (1 if mode_bias > 0.55 else 0)))
+        # KPI-driven tuning loop: adapt next build difficulty/session length from real project signals.
+        kpi = self.project_kpi_summary(gp.id, since_minutes=1440)
+        spi = float(kpi.get("session_per_install", 0.0) or 0.0)
+        sessions = int(kpi.get("sessions", 0) or 0)
+        if sessions >= 25:
+            if spi < 1.15:
+                difficulty = max(1, difficulty - 1)
+                duration = min(70, duration + 10)
+            elif spi > 1.95:
+                difficulty = min(5, difficulty + 1)
+                duration = max(30, duration - 5)
         themes = [
             {"id": "neon", "bg1": "#08142a", "bg2": "#101f3f", "panel": "#12274a", "line": "#2f5fa8", "accent": "#7af0ff"},
             {"id": "sunset", "bg1": "#2a1222", "bg2": "#3e1c30", "panel": "#4a2140", "line": "#8a3e66", "accent": "#ffb36b"},
@@ -2271,6 +2302,12 @@ class Store:
         theme = themes[pick % len(themes)]
         asset_pack = asset_packs[pick % len(asset_packs)]
         variant = random.choices(weighted_variants, weights=weighted_scores, k=1)[0]
+        quality_pass = max(1, int(gp.demo_build_count or 0) + 1)
+        progression = {
+            "meta_depth": min(5, 1 + quality_pass // 2),
+            "boss_phase_count": min(3, 1 + quality_pass // 3),
+            "economy_depth": min(4, 1 + quality_pass // 2),
+        }
         return {
             "mode": mode_info["mode"],
             "mode_base": mode_info["mode_base"],
@@ -2282,6 +2319,8 @@ class Store:
             "asset_pack": asset_pack,
             "duration_sec": duration,
             "difficulty": difficulty,
+            "quality_pass": quality_pass,
+            "progression": progression,
             "title": gp.title,
             "genre": gp.genre,
             "concept": gp.concept,
@@ -3076,7 +3115,14 @@ window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')locati
         picks = upgrade_menu.get(base_mode, ["polish pass", "difficulty tuning", "feedback enhancement"])
         pick = random.choice(picks)
         pass_no = int(gp.demo_build_count or 0) + 1
-        if gp.concept:
+        originality = self.evaluate_project_originality(project_id)
+        if float(originality.get("imitation_risk", 0.0)) >= 55.0 and pass_no >= 3:
+            pivot_pool = [m for m in CORE_MODES if m != base_mode] or list(CORE_MODES)
+            pivot_mode = random.choice(pivot_pool)
+            gp.concept = f"{gp.concept} | Pivot core loop to {pivot_mode} | distinct hook pass {pass_no}"
+            gp.concept = gp.concept[:420]
+            pick = f"core pivot ({pivot_mode})"
+        elif gp.concept:
             gp.concept = f"{gp.concept} | Upgrade pass {pass_no}: {pick}"
         else:
             gp.concept = f"Upgrade pass {pass_no}: {pick}"
