@@ -2972,28 +2972,30 @@ const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:
 const mission=M.getMission('dodge');M.writeMissionHint('dodge');
 let running=true,t={duration},score=0,tick=0,wave=1;
 let target={{x:cvs.width*0.5,y:cvs.height*0.55}};
-let head={{x:target.x,y:target.y,r:12}};let tail=[];let tailTarget=14;
+let head={{x:target.x,y:target.y,r:12}};let tail=[];let tailTarget=14;const segGap=14;
 let balls=[],bursts=[];let near=0;
 function rr(min,max){{return min+Math.random()*(max-min);}}
+function ensureTail(){{if(!tail.length){{for(let i=0;i<tailTarget;i++)tail.push({{x:head.x,y:head.y}});}}}}
 function spawnBall(){{const edge=Math.floor(Math.random()*4);let x=0,y=0;if(edge===0){{x=rr(0,cvs.width);y=-16;}}if(edge===1){{x=cvs.width+16;y=rr(0,cvs.height);}}if(edge===2){{x=rr(0,cvs.width);y=cvs.height+16;}}if(edge===3){{x=-16;y=rr(0,cvs.height);}}
 const speed=1.2+Math.random()*(1.2+{difficulty}*0.35)+tick*0.0018;const dx=head.x-x,dy=head.y-y,d=Math.max(1,Math.hypot(dx,dy));balls.push({{x,y,r:7+Math.random()*7,vx:(dx/d)*speed,vy:(dy/d)*speed}});}}
 function burst(x,y,col){{bursts.push({{x,y,life:24,col}});}}
 function drawBg(){{const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#101a31');g.addColorStop(1,'#0a1226');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
 for(let i=0;i<24;i++){{const y=(i*25+(tick*0.55)%25)%cvs.height;ctx.fillStyle='rgba(96,132,190,0.11)';ctx.fillRect(0,y,cvs.width,1);}}}}
-function drawWorm(){{for(let i=tail.length-1;i>=0;i--){{const p=tail[i];const a=i/Math.max(1,tail.length);ctx.beginPath();ctx.arc(p.x,p.y,Math.max(4,10*(1-a*0.85)),0,Math.PI*2);ctx.fillStyle=`rgba(117,208,162,${{0.18+0.62*(1-a)}})`;ctx.fill();}}
-ctx.beginPath();ctx.arc(head.x,head.y,12,0,Math.PI*2);ctx.fillStyle='#75d0a2';ctx.fill();ctx.fillStyle='#0f2530';ctx.fillRect(head.x-4,head.y-2,2,2);ctx.fillRect(head.x+2,head.y-2,2,2);}}
+function drawWorm(){{for(let i=tail.length-1;i>=0;i--){{const p=tail[i];const a=i/Math.max(1,tail.length);const r=Math.max(5,10-(a*4));ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fillStyle=i===0?'#89e8be':'#67c69c';ctx.fill();ctx.strokeStyle='rgba(10,32,26,0.5)';ctx.stroke();}}
+ctx.beginPath();ctx.arc(head.x,head.y,12,0,Math.PI*2);ctx.fillStyle='#75d0a2';ctx.fill();ctx.strokeStyle='rgba(12,40,32,0.65)';ctx.stroke();ctx.fillStyle='#0f2530';ctx.fillRect(head.x-4,head.y-2,2,2);ctx.fillRect(head.x+2,head.y-2,2,2);}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawBg();for(const b of balls){{ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle='#ff8b8b';ctx.fill();}}
 drawWorm();for(const p of bursts){{ctx.beginPath();ctx.arc(p.x,p.y,28-p.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{p.life/24}})`;ctx.stroke();}}
 ctx.fillStyle='#dbe8ff';ctx.font='14px Segoe UI';ctx.fillText('꼬리 길이 '+tail.length+' / '+tailTarget,14,24);ctx.fillText('웨이브 '+wave+' | 근접회피 '+Math.floor(near),14,44);}}
 cvs.addEventListener('mousemove',e=>{{const r=cvs.getBoundingClientRect();target.x=(e.clientX-r.left)*(cvs.width/r.width);target.y=(e.clientY-r.top)*(cvs.height/r.height);}});
 function step(){{if(!running)return;tick++;if(tick%160===0)wave++;
-head.x+=(target.x-head.x)*0.22;head.y+=(target.y-head.y)*0.22;tail.unshift({{x:head.x,y:head.y}});while(tail.length>tailTarget)tail.pop();
+head.x+=(target.x-head.x)*0.22;head.y+=(target.y-head.y)*0.22;ensureTail();while(tail.length<tailTarget)tail.push({{x:head.x,y:head.y}});while(tail.length>tailTarget)tail.pop();tail[0].x=head.x;tail[0].y=head.y;
+for(let i=1;i<tail.length;i++){{const prev=tail[i-1],cur=tail[i];const dx=prev.x-cur.x,dy=prev.y-cur.y,d=Math.hypot(dx,dy)||0.0001;const move=Math.max(0,d-segGap);cur.x+=(dx/d)*move;cur.y+=(dy/d)*move;}}
 if(tick%Math.max(8,18-wave*2)===0)spawnBall();
 for(const b of balls){{const scale=1+tick*0.00014;b.x+=b.vx*scale;b.y+=b.vy*scale;}}
 balls=balls.filter(b=>b.x>-60&&b.x<cvs.width+60&&b.y>-60&&b.y<cvs.height+60);
 for(const b of balls){{const d=Math.hypot(head.x-b.x,head.y-b.y);if(d<head.r+b.r){{running=false;E.audio.alert();burst(head.x,head.y,'#ff6b7f');}}
 else if(d<head.r+b.r+18){{near=Math.min(999,near+0.45);score+=1;}}}}
-for(let i=0;i<tail.length;i+=4){{
+for(let i=6;i<tail.length;i++){{
   const p=tail[i];
   for(const b of balls){{
     if(Math.hypot(p.x-b.x,p.y-b.y)<b.r+5){{
