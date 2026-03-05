@@ -2893,32 +2893,58 @@ ctx.fillStyle='rgba(8,12,24,0.72)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fi
 ctx.fillText('Arena End',cvs.width/2-88,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Wave: '+wave+' | Meta Lv: '+(meta.level||0),cvs.width/2-158,cvs.height/2+18);
 ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('dodge'),cvs.width/2-190,cvs.height/2+44);M.writeMissionHint('dodge');}}}},1000);
 window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
-        # default aim
+        # default aim (quality-upgraded)
         return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
+const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},hud:{{set(){{}}}},vfx:{{burst(){{}}}}}};
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const mission=M.getMission('aim');M.writeMissionHint('aim');
-let score=0,t={duration},target={{x:180,y:150,r:24,vx:0,vy:0}},target2={{x:640,y:180,r:20,vx:0,vy:0}},running=true,combo=0,bestCombo=0;
-function spawn(main=true){{const r=14+Math.random()*({12 + difficulty * 2});const tx={{x:r+Math.random()*(cvs.width-r*2),y:r+Math.random()*(cvs.height-r*2),r,vx:(-1+Math.random()*2)*(0.6+0.2*{tier}),vy:(-1+Math.random()*2)*(0.6+0.2*{tier})}};
-if(main)target=tx;else target2=tx;}}
-function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#1d2b4b');g.addColorStop(1,'#0f172b');
-ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);ctx.beginPath();ctx.arc(target.x,target.y,target.r,0,Math.PI*2);ctx.fillStyle='#ff6b6b';ctx.fill();
-ctx.beginPath();ctx.arc(target.x,target.y,target.r*0.55,0,Math.PI*2);ctx.fillStyle='#ffd166';ctx.fill();ctx.beginPath();ctx.arc(target.x,target.y,target.r*0.2,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
-if('{variant}'==='multi_target'||{tier}>=3){{ctx.beginPath();ctx.arc(target2.x,target2.y,target2.r,0,Math.PI*2);ctx.fillStyle='#7ac7ff';ctx.fill();}}
-ctx.fillStyle='#d9eaff';ctx.fillText('combo '+combo,14,24);ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,44);}}
-function loop(){{draw();if(running)requestAnimationFrame(loop);}}
+const allowDual=('{variant}'==='multi_target'||{tier}>=3);
+let score=0,t={duration},running=true,combo=0,bestCombo=0,mult=1.0,streakTimer=0,focusTimer=0,stage=1;
+let target={{x:180,y:150,r:24,vx:0,vy:0}},target2={{x:640,y:180,r:20,vx:0,vy:0}};
+let hazards=[],orbs=[],bursts=[];
+function rr(min,max){{return min+Math.random()*(max-min);}}
+function spawn(main=true,boost=1){{const r=rr(13,27+{difficulty}*1.6);const sp=(0.65+0.18*{tier})*boost;const tx={{x:rr(r,cvs.width-r),y:rr(r,cvs.height-r),r,vx:rr(-sp,sp),vy:rr(-sp,sp)}};if(main)target=tx;else target2=tx;}}
+function spawnHazard(){{const r=rr(18,30);hazards.push({{x:rr(r,cvs.width-r),y:rr(r,cvs.height-r),r,vx:rr(-1.2,1.2),vy:rr(-1.2,1.2)}});}}
+function spawnOrb(){{orbs.push({{x:rr(40,cvs.width-40),y:rr(40,cvs.height-40),r:12,ttl:240}});}}
+function hitCircle(x,y,c){{return Math.hypot(x-c.x,y-c.y)<=c.r;}}
+function bounce(c){{c.x+=c.vx;c.y+=c.vy;if(c.x<c.r||c.x>cvs.width-c.r)c.vx*=-1;if(c.y<c.r||c.y>cvs.height-c.r)c.vy*=-1;}}
+function burst(x,y,col){{bursts.push({{x,y,life:28,col}});}}
+function updateBursts(){{for(const b of bursts)b.life--;bursts=bursts.filter(b=>b.life>0);}}
+function drawTarget(c,main=true){{ctx.beginPath();ctx.arc(c.x,c.y,c.r,0,Math.PI*2);ctx.fillStyle=main?'#ff6b6b':'#7ac7ff';ctx.fill();
+ctx.beginPath();ctx.arc(c.x,c.y,c.r*0.55,0,Math.PI*2);ctx.fillStyle='#ffd166';ctx.fill();
+ctx.beginPath();ctx.arc(c.x,c.y,c.r*0.2,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();}}
+function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#1d2b4b');g.addColorStop(1,'#0f172b');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
+for(let i=0;i<16;i++){{const y=(i*33+(Date.now()*0.02)%33)%cvs.height;ctx.fillStyle='rgba(140,190,255,0.08)';ctx.fillRect(0,y,cvs.width,1);}}
+drawTarget(target,true);if(allowDual)drawTarget(target2,false);
+for(const h of hazards){{ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,Math.PI*2);ctx.fillStyle='rgba(255,95,122,0.68)';ctx.fill();}}
+for(const o of orbs){{ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fillStyle='rgba(122,240,255,0.88)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.stroke();}}
+for(const b of bursts){{ctx.beginPath();ctx.arc(b.x,b.y,34-b.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{b.life/30}})`;ctx.stroke();}}
+ctx.fillStyle='#d9eaff';ctx.font='14px Segoe UI';ctx.fillText('combo '+combo+' | x'+mult.toFixed(1),14,24);ctx.fillText('stage '+stage+' | focus '+Math.ceil(focusTimer/60),14,44);
+ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,64);}}
+function loop(){{if(!running)return;draw();updateBursts();requestAnimationFrame(loop);}}
 cvs.addEventListener('click',e=>{{if(!running)return;const r=cvs.getBoundingClientRect();const x=(e.clientX-r.left)*(cvs.width/r.width);const y=(e.clientY-r.top)*(cvs.height/r.height);
-let hit=false;if(Math.hypot(x-target.x,y-target.y)<=target.r){{score+=Math.max(1,Math.round(48-target.r))+combo;combo+=1;bestCombo=Math.max(bestCombo,combo);spawn(true);hit=true;}}
-if((('{variant}'==='multi_target'||{tier}>=3))&&Math.hypot(x-target2.x,y-target2.y)<=target2.r){{score+=Math.max(1,Math.round(38-target2.r))+combo;combo+=1;bestCombo=Math.max(bestCombo,combo);spawn(false);hit=true;}}
-if(!hit)combo=0;scoreEl.textContent=String(score);}});
-spawn(true);spawn(false);loop();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));
-target.x+=target.vx;target.y+=target.vy;if(target.x<target.r||target.x>cvs.width-target.r)target.vx*=-1;if(target.y<target.r||target.y>cvs.height-target.r)target.vy*=-1;
-target2.x+=target2.vx;target2.y+=target2.vy;if(target2.x<target2.r||target2.x>cvs.width-target2.r)target2.vx*=-1;if(target2.y<target2.r||target2.y>cvs.height-target2.r)target2.vy*=-1;
+let hit=false;
+for(const h of hazards){{if(hitCircle(x,y,h)){{score=Math.max(0,score-12);combo=0;mult=Math.max(1,mult-0.4);E.audio.alert();burst(x,y,'#ff6b7f');hit=true;}}}}
+if(hitCircle(x,y,target)){{const base=Math.max(2,Math.round(52-target.r));const gain=Math.round(base*mult)+(focusTimer>0?8:0);score+=gain;combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.0,1.0+combo*0.08+(focusTimer>0?0.6:0));streakTimer=120;spawn(true,1+stage*0.08);E.audio.hit();burst(target.x,target.y,'#ffd166');hit=true;}}
+if(allowDual&&hitCircle(x,y,target2)){{const base=Math.max(2,Math.round(44-target2.r));const gain=Math.round(base*mult)+2;score+=gain;combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.0,mult+0.05);streakTimer=120;spawn(false,1+stage*0.1);E.audio.hit();burst(target2.x,target2.y,'#7ac7ff');hit=true;}}
+for(let i=orbs.length-1;i>=0;i--){{if(hitCircle(x,y,orbs[i])){{focusTimer=300;score+=18;orbs.splice(i,1);E.audio.success();burst(x,y,'#7af0ff');hit=true;break;}}}}
+if(!hit){{combo=0;mult=Math.max(1,mult-0.3);}}scoreEl.textContent=String(score);}});
+spawn(true);spawn(false);for(let i=0;i<2+Math.floor({difficulty}/2);i++)spawnHazard();loop();
+const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));stage=Math.min(4,1+Math.floor(({duration}-t)/Math.max(1,{duration}/4)));
+bounce(target);if(allowDual)bounce(target2);
+for(const h of hazards){{h.vx*=1.0008;h.vy*=1.0008;bounce(h);}}
+for(let i=orbs.length-1;i>=0;i--){{orbs[i].ttl--;if(orbs[i].ttl<=0)orbs.splice(i,1);}}
+if(Math.random()<0.012+stage*0.003&&hazards.length<5+stage)spawnHazard();
+if(Math.random()<0.01&&orbs.length<2)spawnOrb();
+if(streakTimer>0)streakTimer--;if(streakTimer===0&&combo>0){{combo=Math.max(0,combo-1);mult=Math.max(1,mult-0.07);}}
+if(focusTimer>0)focusTimer--;
+E.hud.set({{wave:stage,hp:Math.max(1,5-stage),combo:combo,note:focusTimer>0?'FOCUS ON':'Precision Run'}});
 if(t<=0){{running=false;clearInterval(timer);
-const reward=M.resolveMission('aim',{{score:score,combo:bestCombo}});
-ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 38px Segoe UI';
-ctx.fillText('Time Up',cvs.width/2-90,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
-ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+54);M.writeMissionHint('aim');}}}},1000);"""
+const reward=M.resolveMission('aim',{{score:score,combo:bestCombo}});ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 38px Segoe UI';
+ctx.fillText('Precision End',cvs.width/2-118,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score+' | Best combo: '+bestCombo,cvs.width/2-170,cvs.height/2+28);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+54);M.writeMissionHint('aim');}}}},1000);
+window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
 
     def generate_project_demo(self, project_id: str, actor_id: str = "dev_a") -> Dict[str, Any]:
         gp = self.game_projects[project_id]
