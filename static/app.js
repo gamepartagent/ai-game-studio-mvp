@@ -17,6 +17,7 @@
   completion: null,
   project_kpi: null,
   learning: null,
+  pr_pipeline: null,
 };
 
 let currentTab = "details";
@@ -385,6 +386,7 @@ function renderProjectsTab(){
   const events = state.events || [];
   const artifacts = state.artifacts || [];
   const taskById = Object.fromEntries((state.tasks || []).map((t) => [t.id, t]));
+  const pr = state.pr_pipeline || { items: [], summary: {} };
 
   function upgradeHistoryFor(pid){
     const rows = [];
@@ -423,6 +425,22 @@ function renderProjectsTab(){
     <div class="detail">
       <h3>프로젝트 (최종본)</h3>
       <div class="hint" style="margin-bottom:8px;">에이전트가 품질 기준을 통과해 제출한 최종 후보만 표시됩니다.</div>
+      <div class="detail" style="margin-bottom:8px;">
+        <h3>PR 파이프라인</h3>
+        <div class="kv">
+          <div>대기</div><b>${esc(String(pr.summary.PendingHumanApproval || 0))}</b>
+          <div>승인대기머지</div><b>${esc(String(pr.summary.ApprovedWaitingMerge || 0))}</b>
+          <div>머지완료</div><b>${esc(String(pr.summary.Merged || 0))}</b>
+          <div>실패/거절</div><b>${esc(String((pr.summary.MergeFailed || 0) + (pr.summary.RejectedByHuman || 0)))}</b>
+        </div>
+        ${(pr.items || []).slice(0, 6).map((x) => `
+          <div class="kv">
+            <div>${esc(x.project_id)} · ${esc(short(x.project_title || "-", 24))}</div>
+            <b>${esc(x.status || "-")}</b>
+            <div>QA</div><b>${x.qa_done ? "Done" : "Waiting"}</b>
+          </div>
+        `).join("") || `<div class="hint">PR 상태 데이터 없음</div>`}
+      </div>
       ${rows.length ? rows.map(p => `
         <div class="detail" style="margin-bottom:8px;">
           ${(() => { const h = upgradeHistoryFor(p.id); return `
@@ -766,6 +784,15 @@ async function fetchLearning(){
   }catch(_){ }
 }
 
+async function fetchPrPipeline(){
+  try{
+    const res = await fetch('/api/devops/pr_pipeline?limit=40');
+    const data = await res.json();
+    state.pr_pipeline = data || { items: [], summary: {} };
+    if(currentTab === "projects") renderProjectsTab();
+  }catch(_){ }
+}
+
 async function fetchPortalCatalog(){
   try{
     const res = await fetch('/api/portal/catalog');
@@ -883,6 +910,7 @@ function setupUI(){
   await fetchLearning();
   await fetchPortalCatalog();
   await fetchMonetizationSummary();
+  await fetchPrPipeline();
   const p0 = [...(state.game_projects||[])].sort((a,b)=>String(b.id).localeCompare(String(a.id)))[0];
   if(p0 && p0.id) await fetchProjectKpi(p0.id);
   connectWS();
@@ -892,6 +920,7 @@ function setupUI(){
     fetchLearning();
     fetchPortalCatalog();
     fetchMonetizationSummary();
+    fetchPrPipeline();
     if(currentTab === "preview"){
       const p = [...(state.game_projects||[])].sort((a,b)=>String(b.id).localeCompare(String(a.id)))[0];
       if(p && p.id) fetchProjectKpi(p.id);

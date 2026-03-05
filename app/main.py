@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -407,6 +408,96 @@ async def list_experiments(project_id: str = Query(default="")) -> Dict[str, Any
     if pid:
         items = [e for e in items if str(getattr(e, "project_id", "")).strip() == pid]
     return {"experiments": [store.experiment_to_dict(e) for e in items]}
+
+
+def _artifact_latest_content(artifact_id: str) -> Dict[str, Any]:
+    art = store.artifacts.get(artifact_id)
+    if not art or not art.versions:
+        return {}
+    path = str((art.versions[-1] or {}).get("file_path", "")).strip()
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return dict(payload.get("content", {}) or {})
+    except Exception:
+        return {}
+
+
+@app.get("/api/devops/pr_pipeline")
+async def get_pr_pipeline(limit: int = Query(default=40, ge=1, le=200)) -> Dict[str, Any]:
+    records: List[Dict[str, Any]] = []
+    approvals = list(store.approvals.values())
+    arts = sorted(store.artifacts.values(), key=lambda a: a.updated_at, reverse=True)
+    merge_contents: List[Dict[str, Any]] = []
+    for a in arts:
+        c = _artifact_latest_content(a.id)
+        if str(c.get("executor", "")) == "dev_github_merge":
+            merge_contents.append(c)
+
+    for a in arts:
+        c = _artifact_latest_content(a.id)
+        if str(c.get("executor", "")) != "dev_github_pr":
+            continue
+        project_id = str(c.get("project_id", "")).strip().upper()
+        pr_url = str(c.get("pull_request_url", "")).strip()
+        if not project_id:
+            continue
+
+        gp = store.game_projects.get(project_id)
+        qa_done = False
+        if gp:
+            qa_done = any(
+                tid in store.tasks and store.tasks[tid].type == "QA" and store.tasks[tid].status == "Done"
+                for tid in (gp.task_ids or [])
+            )
+
+        related_approval = None
+        for apr in approvals:
+            payload = apr.payload or {}
+            if str(payload.get("artifact_id", "")).strip() == a.id:
+                related_approval = apr
+                break
+
+        related_merge = None
+        for mc in merge_contents:
+            if pr_url and str(mc.get("pull_request_url", "")).strip() == pr_url:
+                related_merge = mc
+                break
+
+        status = "Drafted"
+        if related_merge and bool(related_merge.get("merged", False)):
+            status = "Merged"
+        elif related_merge and not bool(related_merge.get("merged", True)):
+            status = "MergeFailed"
+        elif related_approval and related_approval.status == "Rejected":
+            status = "RejectedByHuman"
+        elif related_approval and related_approval.status == "Approved":
+            status = "ApprovedWaitingMerge"
+        elif related_approval and related_approval.status == "Pending":
+            status = "PendingHumanApproval"
+
+        records.append(
+            {
+                "artifact_id": a.id,
+                "project_id": project_id,
+                "project_title": gp.title if gp else "",
+                "pr_url": pr_url,
+                "branch": str(c.get("branch", "")).strip(),
+                "created_at": a.created_at,
+                "updated_at": a.updated_at,
+                "qa_done": qa_done,
+                "approval_id": related_approval.id if related_approval else "",
+                "approval_status": related_approval.status if related_approval else "",
+                "status": status,
+            }
+        )
+        if len(records) >= int(limit):
+            break
+
+    counts = Counter([r.get("status", "Unknown") for r in records])
+    return {"items": records, "summary": dict(counts)}
 
 
 @app.post("/api/experiments")

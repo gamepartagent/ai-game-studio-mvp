@@ -1840,6 +1840,7 @@ class Store:
             "demo_artifacts": 0,
             "test_build_reports": 0,
             "git_reports": 0,
+            "gameplay_smoke_reports": 0,
         }
         if not task_ids:
             return health
@@ -1854,6 +1855,8 @@ class Store:
                 health["test_build_reports"] += 1
             if "git ops report for" in title:
                 health["git_reports"] += 1
+            if "gameplay smoke report for" in title:
+                health["gameplay_smoke_reports"] += 1
         return health
 
     def completion_report(self) -> Dict[str, Any]:

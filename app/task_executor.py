@@ -493,6 +493,108 @@ class DevGitHubMergeExecutor(BaseTaskExecutor):
         )
 
 
+class DevGameplaySmokeExecutor(BaseTaskExecutor):
+    name = "dev_gameplay_smoke"
+
+    def _extract_project_id(self, store: Store, task_id: str, config: Dict[str, Any]) -> str:
+        pid = str(config.get("project_id", "")).strip().upper()
+        if pid:
+            return pid
+        task = store.tasks.get(task_id)
+        if not task:
+            return ""
+        m = re.search(r"(GAM-\d{5})", f"{task.title} {task.description}".upper())
+        return m.group(1) if m else ""
+
+    def run(self, store: Store, task_id: str, actor_id: str, config: Dict[str, Any] | None = None) -> ExecutionResult:
+        if task_id not in store.tasks:
+            return ExecutionResult(ok=False, summary=f"task not found: {task_id}")
+        cfg = config or {}
+        project_id = self._extract_project_id(store, task_id, cfg)
+        if not project_id:
+            return ExecutionResult(ok=False, summary="dev_gameplay_smoke requires project_id")
+        if project_id not in store.game_projects:
+            return ExecutionResult(ok=False, summary=f"project not found: {project_id}")
+        gp = store.game_projects[project_id]
+
+        if not gp.demo_url:
+            try:
+                store.generate_project_demo(project_id, actor_id=actor_id)
+                gp = store.game_projects[project_id]
+            except Exception as exc:
+                return ExecutionResult(ok=False, summary=f"failed to generate demo before smoke test: {str(exc)}")
+
+        demo_url = str(gp.demo_url or "")
+        static_root = Path(os.getenv("STUDIO_STATIC_DIR", "static")).resolve()
+        rel = demo_url.replace("/static/", "", 1).lstrip("/")
+        index_path = (static_root / rel).resolve()
+        game_js_path = index_path.parent / "game.js"
+        mode = str((gp.game_blueprint or {}).get("mode_base") or (gp.game_blueprint or {}).get("mode") or "").strip().lower()
+
+        checks: list[Dict[str, Any]] = []
+
+        def add_check(name: str, passed: bool, detail: str = "") -> None:
+            checks.append({"name": name, "passed": bool(passed), "detail": detail})
+
+        add_check("index_exists", index_path.exists(), str(index_path))
+        add_check("game_js_exists", game_js_path.exists(), str(game_js_path))
+
+        index_src = ""
+        js_src = ""
+        if index_path.exists():
+            index_src = index_path.read_text(encoding="utf-8", errors="replace")
+            add_check("index_min_size", len(index_src) >= 1000, f"size={len(index_src)}")
+            add_check("index_has_canvas", "id=\"game\"" in index_src, "canvas id check")
+        if game_js_path.exists():
+            js_src = game_js_path.read_text(encoding="utf-8", errors="replace")
+            add_check("game_js_min_size", len(js_src) >= 3000, f"size={len(js_src)}")
+            add_check("game_js_has_step_loop", ("function step()" in js_src) or ("requestAnimationFrame(step)" in js_src), "loop check")
+            add_check("game_js_has_score_binding", "scoreEl" in js_src, "score HUD check")
+
+        mode_signatures = {
+            "aim": ["headshots", "bots", "hitZone"],
+            "rhythm": ["judgePress", "beatSec", "PERFECT"],
+            "runner": ["spawnObstacle", "dash", "stage"],
+            "dodge": ["tailTarget", "spawnBall", "Worm Dodge End"],
+            "memory": ["cardN", "sequence", "Memory End"],
+            "clicker": ["combo", "coins", "Clicker End"],
+        }
+        sigs = mode_signatures.get(mode, [])
+        if sigs and js_src:
+            hit = sum(1 for s in sigs if s in js_src)
+            add_check("mode_signature", hit >= max(1, len(sigs) - 1), f"mode={mode} hit={hit}/{len(sigs)}")
+        else:
+            add_check("mode_signature", bool(js_src), f"mode={mode or '-'}")
+
+        passed = sum(1 for c in checks if c["passed"])
+        total = max(1, len(checks))
+        score = round((passed / total) * 100.0, 1)
+        ok = score >= float(cfg.get("pass_score", 75.0))
+
+        task = store.tasks[task_id]
+        artifact = store.create_artifact(
+            title=f"Gameplay smoke report for {task.id}",
+            created_by=actor_id,
+            task_id=task_id,
+            content={
+                "executor": self.name,
+                "project_id": project_id,
+                "project_title": gp.title,
+                "mode": mode,
+                "demo_url": demo_url,
+                "score": score,
+                "passed": ok,
+                "checks": checks,
+            },
+        )
+        return ExecutionResult(
+            ok=ok,
+            summary=f"executor {self.name} {'passed' if ok else 'failed'} ({score:.1f}): artifact {artifact.id}",
+            artifact_id=artifact.id,
+            details={"project_id": project_id, "mode": mode, "score": score},
+        )
+
+
 class ProjectAutoUpgradeExecutor(BaseTaskExecutor):
     name = "project_autoupgrade"
 
@@ -550,6 +652,7 @@ class TaskExecutorRegistry:
         self.register(DevGitOpsExecutor())
         self.register(DevGitHubPRExecutor())
         self.register(DevGitHubMergeExecutor())
+        self.register(DevGameplaySmokeExecutor())
         self.register(ProjectAutoUpgradeExecutor())
 
     def register(self, executor: BaseTaskExecutor) -> None:

@@ -1186,6 +1186,19 @@ class ToolExecutor:
                                 }
                             )
                             await self._emit_latest_event()
+                        if random.random() < 0.8:
+                            await self.execute(
+                                {
+                                    "tool": "run_task_executor",
+                                    "args": {
+                                        "task_id": dev_tasks[0],
+                                        "executor": "dev_gameplay_smoke",
+                                        "actor_id": random.choice(["dev_a", "dev_b"]),
+                                        "config": {"project_id": gp.id, "pass_score": 75},
+                                    },
+                                }
+                            )
+                            await self._emit_latest_event()
                         if self.enable_github_autopr and random.random() < 0.45:
                             await self.execute(
                                 {
@@ -1253,12 +1266,28 @@ class ToolExecutor:
                         }
                     )
                     await self._emit_latest_event()
+                if dev_done and health["gameplay_smoke_reports"] < 1:
+                    await self.execute(
+                        {
+                            "tool": "run_task_executor",
+                            "args": {
+                                "task_id": dev_done[0],
+                                "executor": "dev_gameplay_smoke",
+                                "actor_id": "qa",
+                                "config": {"project_id": gp.id, "pass_score": 75},
+                            },
+                        }
+                    )
+                    await self._emit_latest_event()
                 # only request release after a minimum quality pass
+                health = self.store.project_artifact_health(gp.id)
                 quality = self.store.evaluate_project_quality(gp.id)
                 if (
                     (gp.demo_build_count >= target_builds or (gp.demo_build_count >= 5 and quality >= 84.0))
                     and len(done) >= max(2, len(gp.task_ids) - 1)
                     and quality >= 72.0
+                    and health["test_build_reports"] >= 1
+                    and health["gameplay_smoke_reports"] >= 1
                 ):
                     self.store.try_prepare_project_release(gp.id, requested_by="qa")
                     await self._emit_latest_event()
