@@ -2479,6 +2479,11 @@ class Store:
     <canvas id="game" width="820" height="440"></canvas>
     <div class="hint">{gp.concept or "Auto-generated playable prototype by AI studio."}</div>
     <div class="hint" id="missionHint">Mission: loading...</div>
+    <div class="hint" id="socialHint">오늘의 하이라이트 준비 중...</div>
+    <div class="sub2">
+      <div id="bestScoreBadge">Best: -</div>
+      <button id="replayBtn" class="audio-btn">다시 도전 (R)</button>
+    </div>
   </div>
   <script>
   (() => {{
@@ -2722,8 +2727,23 @@ class Store:
         const done = mission && mission.completed ? '완료' : '진행중';
         el.textContent = `Mission[${{done}}]: ${{mission.label}} | 보상 ${{mission.reward}} 코인 | 보유 코인 ${{coins}}`;
       }},
+      updateSocialHint(mode, score, combo, wave) {{
+        const key = `studio_social_${{mode}}`;
+        let best = 0;
+        try {{ best = Number(localStorage.getItem(key) || 0); }} catch (_e) {{}}
+        const nextBest = Math.max(best, Number(score || 0));
+        try {{ localStorage.setItem(key, String(nextBest)); }} catch (_e) {{}}
+        const badge = document.getElementById('bestScoreBadge');
+        if (badge) badge.textContent = `Best: ${{nextBest}}`;
+        const el = document.getElementById('socialHint');
+        if (!el) return;
+        const comboText = combo ? ` · 콤보 ${{combo}}` : '';
+        const waveText = wave ? ` · 웨이브 ${{wave}}` : '';
+        el.textContent = `하이라이트: 점수 ${{score}}${{comboText}}${{waveText}} · 친구와 점수 비교`;
+      }},
     }};
     window.__studioMeta.writeMissionHint(MODE_BASE);
+    window.__studioMeta.updateSocialHint(MODE_BASE, 0, 0, 0);
 
     const assetKeys = ['player','enemy','orb','boss'];
     const assets = {{}};
@@ -2757,6 +2777,8 @@ class Store:
       const on = window.__studioEngine.audio.toggle();
       btn.textContent = on ? 'Audio ON' : 'Audio OFF';
     }});
+    const replayBtn = document.getElementById('replayBtn');
+    if (replayBtn) replayBtn.addEventListener('click', () => location.reload());
   }})();
   </script>
   <script src="./game.js"></script>
@@ -2791,7 +2813,7 @@ const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t
 const reward=M.resolveMission('clicker',{{score:score,combo:bestCombo}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 36px Segoe UI';
 ctx.fillText('Clicker End',cvs.width/2-105,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
-ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('clicker'),cvs.width/2-170,cvs.height/2+54);M.writeMissionHint('clicker');}}}},1000);"""
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('clicker'),cvs.width/2-170,cvs.height/2+54);if(M.updateSocialHint)M.updateSocialHint('clicker',score,bestCombo,0);M.writeMissionHint('clicker');}}}},1000);"""
         if mode == "memory":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
@@ -2809,7 +2831,7 @@ const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));if(t
 const reward=M.resolveMission('memory',{{score:score,combo:bestStreak}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
 ctx.fillText('Memory End',cvs.width/2-98,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
-ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('memory'),cvs.width/2-170,cvs.height/2+52);M.writeMissionHint('memory');}}}},1000);"""
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('memory'),cvs.width/2-170,cvs.height/2+52);if(M.updateSocialHint)M.updateSocialHint('memory',score,bestCombo,0);M.writeMissionHint('memory');}}}},1000);"""
         if mode == "rhythm":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
@@ -2830,7 +2852,7 @@ step();const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t
 const reward=M.resolveMission('rhythm',{{score:score,combo:bestCombo}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
 ctx.fillText('Rhythm End',cvs.width/2-92,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score,cvs.width/2-48,cvs.height/2+28);
-ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('rhythm'),cvs.width/2-170,cvs.height/2+52);M.writeMissionHint('rhythm');}}}},1000);"""
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('rhythm'),cvs.width/2-170,cvs.height/2+52);if(M.updateSocialHint)M.updateSocialHint('rhythm',score,bestCombo,0);M.writeMissionHint('rhythm');}}}},1000);"""
         if mode == "runner":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
@@ -2880,7 +2902,7 @@ const prevBest=Math.max(0,Number(meta.best||0));meta.best=Math.max(prevBest,scor
 const reward=M.resolveMission('runner',{{score:score,combo:bestCombo,stage:stage}});
 ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 34px Segoe UI';
 ctx.fillText('Run End',cvs.width/2-86,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Stage: '+stage+' | Meta Lv: '+(meta.level||0),cvs.width/2-170,cvs.height/2+16);
-ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('runner'),cvs.width/2-190,cvs.height/2+42);M.writeMissionHint('runner');}}}},1000);"""
+ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('runner'),cvs.width/2-190,cvs.height/2+42);if(M.updateSocialHint)M.updateSocialHint('runner',score,bestCombo,stage);M.writeMissionHint('runner');}}}},1000);"""
         if mode == "dodge":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
@@ -2932,7 +2954,7 @@ const prevBest=Math.max(0,Number(meta.best||0));meta.best=Math.max(prevBest,scor
 const reward=M.resolveMission('dodge',{{score:score,wave:wave,stage:stage}});
 ctx.fillStyle='rgba(8,12,24,0.72)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 36px Segoe UI';
 ctx.fillText('Arena End',cvs.width/2-88,cvs.height/2-16);ctx.font='18px Segoe UI';ctx.fillText('Score: '+score+' | Wave: '+wave+' | Meta Lv: '+(meta.level||0),cvs.width/2-158,cvs.height/2+18);
-ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('dodge'),cvs.width/2-190,cvs.height/2+44);M.writeMissionHint('dodge');}}}},1000);
+ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('dodge'),cvs.width/2-190,cvs.height/2+44);if(M.updateSocialHint)M.updateSocialHint('dodge',score,Math.floor(score/45),wave);M.writeMissionHint('dodge');}}}},1000);
 window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
         # default aim (quality-upgraded)
         return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
@@ -2984,7 +3006,7 @@ E.hud.set({{wave:stage,hp:Math.max(1,5-stage),combo:combo,note:focusTimer>0?'FOC
 if(t<=0){{running=false;clearInterval(timer);
 const reward=M.resolveMission('aim',{{score:score,combo:bestCombo}});ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 38px Segoe UI';
 ctx.fillText('Precision End',cvs.width/2-118,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score+' | Best combo: '+bestCombo,cvs.width/2-170,cvs.height/2+28);
-ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+54);M.writeMissionHint('aim');}}}},1000);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+54);if(M.updateSocialHint)M.updateSocialHint('aim',score,bestCombo,stage);M.writeMissionHint('aim');}}}},1000);
 window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
 
     def generate_project_demo(self, project_id: str, actor_id: str = "dev_a") -> Dict[str, Any]:
