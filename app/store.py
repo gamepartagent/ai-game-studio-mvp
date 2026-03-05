@@ -3025,50 +3025,47 @@ const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},h
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const mission=M.getMission('aim');M.writeMissionHint('aim');
 const allowDual=('{variant}'==='multi_target'||{tier}>=3);
-let score=0,t={duration},running=true,combo=0,bestCombo=0,mult=1.0,streakTimer=0,focusTimer=0,stage=1;
-let target={{x:180,y:150,r:24,vx:0,vy:0}},target2={{x:640,y:180,r:20,vx:0,vy:0}};
-let hazards=[],orbs=[],bursts=[];
+let score=0,t={duration},running=true,combo=0,bestCombo=0,mult=1.0,stage=1;
+let headshots=0,bodyshots=0,legshots=0,misses=0,lastShot='READY';
+let bots=[];let bursts=[];
 function rr(min,max){{return min+Math.random()*(max-min);}}
-function spawn(main=true,boost=1){{const r=rr(13,27+{difficulty}*1.6);const sp=(0.65+0.18*{tier})*boost;const tx={{x:rr(r,cvs.width-r),y:rr(r,cvs.height-r),r,vx:rr(-sp,sp),vy:rr(-sp,sp)}};if(main)target=tx;else target2=tx;}}
-function spawnHazard(){{const r=rr(18,30);hazards.push({{x:rr(r,cvs.width-r),y:rr(r,cvs.height-r),r,vx:rr(-1.2,1.2),vy:rr(-1.2,1.2)}});}}
-function spawnOrb(){{orbs.push({{x:rr(40,cvs.width-40),y:rr(40,cvs.height-40),r:12,ttl:240}});}}
-function hitCircle(x,y,c){{return Math.hypot(x-c.x,y-c.y)<=c.r;}}
-function bounce(c){{c.x+=c.vx;c.y+=c.vy;if(c.x<c.r||c.x>cvs.width-c.r)c.vx*=-1;if(c.y<c.r||c.y>cvs.height-c.r)c.vy*=-1;}}
-function burst(x,y,col){{bursts.push({{x,y,life:28,col}});}}
+function mkBot(boost=1){{const s=0.86+Math.random()*0.48;const h=72*s;const w=30*s;const headR=11*s;const sp=(0.9+0.25*{tier})*boost;return{{x:rr(70,cvs.width-70),y:rr(112,cvs.height-72),vx:rr(-sp,sp),vy:rr(-sp,sp),w,h,headR,ttl:420+Math.floor(Math.random()*220)}};}}
+function spawnBots(){{bots=[mkBot(1)];if(allowDual)bots.push(mkBot(1.1));}}
+function burst(x,y,col){{bursts.push({{x,y,life:26,col}});}}
 function updateBursts(){{for(const b of bursts)b.life--;bursts=bursts.filter(b=>b.life>0);}}
-function drawTarget(c,main=true){{ctx.beginPath();ctx.arc(c.x,c.y,c.r,0,Math.PI*2);ctx.fillStyle=main?'#ff6b6b':'#7ac7ff';ctx.fill();
-ctx.beginPath();ctx.arc(c.x,c.y,c.r*0.55,0,Math.PI*2);ctx.fillStyle='#ffd166';ctx.fill();
-ctx.beginPath();ctx.arc(c.x,c.y,c.r*0.2,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();}}
-function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#1d2b4b');g.addColorStop(1,'#0f172b');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
-for(let i=0;i<16;i++){{const y=(i*33+(Date.now()*0.02)%33)%cvs.height;ctx.fillStyle='rgba(140,190,255,0.08)';ctx.fillRect(0,y,cvs.width,1);}}
-drawTarget(target,true);if(allowDual)drawTarget(target2,false);
-for(const h of hazards){{ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,Math.PI*2);ctx.fillStyle='rgba(255,95,122,0.68)';ctx.fill();}}
-for(const o of orbs){{ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fillStyle='rgba(122,240,255,0.88)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.stroke();}}
-for(const b of bursts){{ctx.beginPath();ctx.arc(b.x,b.y,34-b.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{b.life/30}})`;ctx.stroke();}}
-ctx.fillStyle='#d9eaff';ctx.font='14px Segoe UI';ctx.fillText('combo '+combo+' | x'+mult.toFixed(1),14,24);ctx.fillText('stage '+stage+' | focus '+Math.ceil(focusTimer/60),14,44);
+function botZones(b){{const head={{x:b.x,y:b.y-b.h*0.58,r:b.headR}};const body={{x:b.x,y:b.y-b.h*0.15,w:b.w,h:b.h*0.46}};const leg={{x:b.x,y:b.y+b.h*0.28,w:b.w*0.9,h:b.h*0.34}};return{{head,body,leg}};}}
+function ptRect(x,y,r){{return x>=r.x-r.w/2&&x<=r.x+r.w/2&&y>=r.y-r.h/2&&y<=r.y+r.h/2;}}
+function hitZone(x,y,b){{const z=botZones(b);if(Math.hypot(x-z.head.x,y-z.head.y)<=z.head.r)return'head';if(ptRect(x,y,z.body))return'body';if(ptRect(x,y,z.leg))return'leg';return'';}}
+function drawBot(b){{const z=botZones(b);ctx.fillStyle='rgba(90,120,168,0.16)';ctx.fillRect(b.x-30,b.y-b.h*0.92,60,b.h*1.08);
+ctx.beginPath();ctx.arc(z.head.x,z.head.y,z.head.r,0,Math.PI*2);ctx.fillStyle='#ffbd8f';ctx.fill();
+ctx.fillStyle='#6eb8ff';ctx.fillRect(z.body.x-z.body.w/2,z.body.y-z.body.h/2,z.body.w,z.body.h);
+ctx.fillStyle='#8dd6a4';ctx.fillRect(z.leg.x-z.leg.w/2,z.leg.y-z.leg.h/2,z.leg.w,z.leg.h);
+ctx.strokeStyle='rgba(255,255,255,0.28)';ctx.strokeRect(z.body.x-z.body.w/2,z.body.y-z.body.h/2,z.body.w,z.body.h);}}
+function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#16223f');g.addColorStop(1,'#0f172b');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
+for(let i=0;i<18;i++){{const y=(i*28+(Date.now()*0.03)%28)%cvs.height;ctx.fillStyle='rgba(120,170,255,0.08)';ctx.fillRect(0,y,cvs.width,1);}}
+for(const b of bots)drawBot(b);for(const b of bursts){{ctx.beginPath();ctx.arc(b.x,b.y,34-b.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{b.life/28}})`;ctx.stroke();}}
+ctx.fillStyle='#d9eaff';ctx.font='14px Segoe UI';ctx.fillText('x'+mult.toFixed(1)+' combo '+combo+' | '+lastShot,14,24);
+ctx.fillText('헤드 '+headshots+' 몸통 '+bodyshots+' 다리 '+legshots+' 미스 '+misses,14,44);
 ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,64);}}
 function loop(){{if(!running)return;draw();updateBursts();requestAnimationFrame(loop);}}
 cvs.addEventListener('click',e=>{{if(!running)return;const r=cvs.getBoundingClientRect();const x=(e.clientX-r.left)*(cvs.width/r.width);const y=(e.clientY-r.top)*(cvs.height/r.height);
-let hit=false;
-for(const h of hazards){{if(hitCircle(x,y,h)){{score=Math.max(0,score-12);combo=0;mult=Math.max(1,mult-0.4);E.audio.alert();burst(x,y,'#ff6b7f');hit=true;}}}}
-if(hitCircle(x,y,target)){{const base=Math.max(2,Math.round(52-target.r));const gain=Math.round(base*mult)+(focusTimer>0?8:0);score+=gain;combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.0,1.0+combo*0.08+(focusTimer>0?0.6:0));streakTimer=120;spawn(true,1+stage*0.08);E.audio.hit();burst(target.x,target.y,'#ffd166');hit=true;}}
-if(allowDual&&hitCircle(x,y,target2)){{const base=Math.max(2,Math.round(44-target2.r));const gain=Math.round(base*mult)+2;score+=gain;combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.0,mult+0.05);streakTimer=120;spawn(false,1+stage*0.1);E.audio.hit();burst(target2.x,target2.y,'#7ac7ff');hit=true;}}
-for(let i=orbs.length-1;i>=0;i--){{if(hitCircle(x,y,orbs[i])){{focusTimer=300;score+=18;orbs.splice(i,1);E.audio.success();burst(x,y,'#7af0ff');hit=true;break;}}}}
-if(!hit){{combo=0;mult=Math.max(1,mult-0.3);}}scoreEl.textContent=String(score);}});
-spawn(true);spawn(false);for(let i=0;i<2+Math.floor({difficulty}/2);i++)spawnHazard();loop();
+let zone='';let botIdx=-1;for(let i=0;i<bots.length;i++){{const z=hitZone(x,y,bots[i]);if(z){{zone=z;botIdx=i;break;}}}}
+if(!zone){{misses++;combo=0;mult=Math.max(1,mult-0.2);score=Math.max(0,score-4);lastShot='MISS';E.audio.alert();burst(x,y,'#ff6b7f');}}
+else{{const b=bots[botIdx];let gain=0;if(zone==='head'){{gain=45;headshots++;lastShot='HEADSHOT';E.audio.success();burst(x,y,'#7af0ff');}}
+else if(zone==='body'){{gain=22;bodyshots++;lastShot='BODY';E.audio.hit();burst(x,y,'#ffd166');}}
+else{{gain=12;legshots++;lastShot='LEG';E.audio.hit();burst(x,y,'#9de6a7');}}
+combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.5,1+combo*0.07);score+=Math.round(gain*mult);bots[botIdx]=mkBot(1+stage*0.08);}}
+scoreEl.textContent=String(score);}});
+spawnBots();loop();
 const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));stage=Math.min(4,1+Math.floor(({duration}-t)/Math.max(1,{duration}/4)));
-bounce(target);if(allowDual)bounce(target2);
-for(const h of hazards){{h.vx*=1.0008;h.vy*=1.0008;bounce(h);}}
-for(let i=orbs.length-1;i>=0;i--){{orbs[i].ttl--;if(orbs[i].ttl<=0)orbs.splice(i,1);}}
-if(Math.random()<0.012+stage*0.003&&hazards.length<5+stage)spawnHazard();
-if(Math.random()<0.01&&orbs.length<2)spawnOrb();
-if(streakTimer>0)streakTimer--;if(streakTimer===0&&combo>0){{combo=Math.max(0,combo-1);mult=Math.max(1,mult-0.07);}}
-if(focusTimer>0)focusTimer--;
-E.hud.set({{wave:stage,hp:Math.max(1,5-stage),combo:combo,note:focusTimer>0?'FOCUS ON':'Precision Run'}});
+for(let i=0;i<bots.length;i++){{const b=bots[i];b.x+=b.vx;b.y+=b.vy;if(b.x<45||b.x>cvs.width-45)b.vx*=-1;if(b.y<84||b.y>cvs.height-62)b.vy*=-1;b.ttl--;if(b.ttl<=0)bots[i]=mkBot(1+stage*0.08);}}
+if(combo>0&&Math.random()<0.12)combo--;mult=Math.max(1,1+combo*0.06);
+E.hud.set({{wave:stage,hp:Math.max(0,6-Math.min(5,misses)),combo:combo,note:lastShot}});
 if(t<=0){{running=false;clearInterval(timer);
 const reward=M.resolveMission('aim',{{score:score,combo:bestCombo}});ctx.fillStyle='rgba(8,12,24,0.74)';ctx.fillRect(0,0,cvs.width,cvs.height);ctx.fillStyle='#fff';ctx.font='bold 38px Segoe UI';
-ctx.fillText('Precision End',cvs.width/2-118,cvs.height/2-8);ctx.font='22px Segoe UI';ctx.fillText('Score: '+score+' | Best combo: '+bestCombo,cvs.width/2-170,cvs.height/2+28);
-ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+54);if(M.updateSocialHint)M.updateSocialHint('aim',score,bestCombo,stage);M.writeMissionHint('aim');}}}},1000);
+ctx.fillText('Aim Drill End',cvs.width/2-128,cvs.height/2-8);ctx.font='20px Segoe UI';ctx.fillText('Score: '+score+' | Combo: '+bestCombo,cvs.width/2-140,cvs.height/2+24);
+ctx.fillText('HS '+headshots+' / Body '+bodyshots+' / Leg '+legshots,cvs.width/2-150,cvs.height/2+50);
+ctx.font='16px Segoe UI';ctx.fillText('Mission: '+(reward>0?('보상 +'+reward+' 코인'):'진행중')+' | Coins: '+M.getCoins('aim'),cvs.width/2-170,cvs.height/2+74);if(M.updateSocialHint)M.updateSocialHint('aim',score,bestCombo,headshots);M.writeMissionHint('aim');}}}},1000);
 window.addEventListener('keydown',e=>{{if((e.key||'').toLowerCase()==='r')location.reload();}});"""
 
     def generate_project_demo(self, project_id: str, actor_id: str = "dev_a") -> Dict[str, Any]:
