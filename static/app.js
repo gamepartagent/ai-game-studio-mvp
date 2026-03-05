@@ -251,10 +251,10 @@ function renderPreview(){
   const controlHintMap = {
     aim: "마우스로 표적을 클릭해 점수를 올립니다.",
     runner: "스페이스바로 점프하며 장애물을 피합니다.",
-    dodge: "화살표 키로 이동해 충돌을 피합니다.",
+    dodge: "마우스로 지렁이를 이동해 탄막을 피합니다.",
     clicker: "화면 클릭으로 코인을 수집합니다.",
     memory: "카드를 뒤집어 같은 짝을 맞춥니다.",
-    rhythm: "화면 클릭 후 A/S/D/F 키로 노트를 맞춥니다.",
+    rhythm: "스페이스/엔터/클릭 원버튼으로 비트 타이밍을 맞춥니다.",
   };
   const controlHint = controlHintMap[mode] || "화면 클릭 후 키보드/마우스로 조작해보세요.";
   el.innerHTML = `

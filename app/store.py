@@ -2286,11 +2286,13 @@ class Store:
             return "aim"
         if any(k in text for k in ["aim", "precision", "trainer", "에임"]):
             return "aim"
-        if any(k in text for k in ["runner", "platform", "timing", "러너"]):
-            return "rhythm"
+        if any(k in text for k in ["runner", "platform", "parkour", "dash", "러너"]):
+            return "runner"
         if any(k in text for k in ["merge", "puzzle", "block", "tile", "퍼즐", "memory", "card", "match", "기억"]):
-            return "dodge"
-        if any(k in text for k in ["idle", "clicker", "incremental", "방치", "rhythm", "beat", "music", "리듬"]):
+            return "memory"
+        if any(k in text for k in ["idle", "clicker", "incremental", "방치", "tap", "클리커"]):
+            return "clicker"
+        if any(k in text for k in ["rhythm", "beat", "music", "리듬"]):
             return "rhythm"
         # Ambiguous concept fallback: pick the least-recently used base mode for diversity.
         base_modes = list(CORE_MODES)
@@ -2338,12 +2340,12 @@ class Store:
         ]
         base_mode = mode_info["mode_base"]
         variants = {
-            "aim": ["focus_shot", "multi_target"],
-            "runner": ["classic_dash", "orb_hunt"],
-            "dodge": ["rain_field", "spiral_wave"],
-            "clicker": ["precision_click", "chain_click"],
-            "memory": ["flash_match", "sequence_match"],
-            "rhythm": ["lane_tap", "burst_tap"],
+            "aim": ["focus_shot", "multi_target", "moving_sentry", "headhunter_combo"],
+            "runner": ["classic_dash", "orb_hunt", "boss_lane", "tempo_parkour"],
+            "dodge": ["rain_field", "spiral_wave", "worm_survival", "gravity_pulse"],
+            "clicker": ["precision_click", "chain_click", "risk_window", "boss_click"],
+            "memory": ["flash_match", "sequence_match", "invert_round", "mirror_deck"],
+            "rhythm": ["lane_tap", "burst_tap", "orbit_one_button", "sync_switch"],
         }.get(base_mode, ["default"])
         variant_bias = dict(lm.get("variant_bias", {}) or {})
         weighted_variants: List[str] = []
@@ -2362,6 +2364,16 @@ class Store:
             "boss_phase_count": min(3, 1 + quality_pass // 3),
             "economy_depth": min(4, 1 + quality_pass // 2),
         }
+        mutator_pool = {
+            "aim": ["critical_streak", "moving_cover", "headshot_multiplier", "phase_shift_targets", "focus_meter"],
+            "runner": ["hazard_pulse", "dash_charge", "orb_chain", "midboss_checkpoints", "tempo_shift"],
+            "dodge": ["growing_tail", "energy_pickups", "blackhole_pulse", "split_projectiles", "near_miss_boost"],
+            "clicker": ["combo_overheat", "bonus_window", "mini_boss_pop", "precision_bonus", "shop_boost"],
+            "memory": ["flash_decay", "fake_card", "pattern_invert", "time_pressure", "streak_shield"],
+            "rhythm": ["sync_window", "pulse_shift", "fever_chain", "beat_hold", "orbit_variance"],
+        }.get(base_mode, ["core"])
+        mutator_count = min(4, max(2, 1 + quality_pass // 2))
+        mutators = random.sample(mutator_pool, k=min(mutator_count, len(mutator_pool)))
         return {
             "mode": mode_info["mode"],
             "mode_base": mode_info["mode_base"],
@@ -2375,6 +2387,7 @@ class Store:
             "difficulty": difficulty,
             "quality_pass": quality_pass,
             "progression": progression,
+            "mutators": mutators,
             "title": gp.title,
             "genre": gp.genre,
             "concept": gp.concept,
@@ -2421,7 +2434,7 @@ class Store:
             "dodge": "Arrow keys move, Shift dash, survive waves and collect power-ups.",
             "clicker": "Fast clicks build combo multiplier.",
             "memory": "Memorize flashes and type matching keys.",
-            "rhythm": "Hit lane keys on beat timing.",
+            "rhythm": "One-button timing: Space/Enter/Click on beat.",
         }.get(base_mode, "Play with keyboard/mouse.")
         objective = {
             "aim": "High precision score race",
@@ -2437,6 +2450,7 @@ class Store:
         panel = str(theme.get("panel", "#151c2f"))
         line = str(theme.get("line", "#2a385b"))
         accent = str(theme.get("accent", "#7aa2ff"))
+        mutators = ", ".join(str(x) for x in (blueprint.get("mutators", []) or [])[:4]) or "-"
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2527,6 +2541,10 @@ class Store:
     <div class="sub2">
       <div>Asset Pack: <b>{asset_id}</b> · SFX: {sfx_name}</div>
       <div>BGM: {bgm_name} <button id="audioToggle" class="audio-btn">Audio ON/OFF</button></div>
+    </div>
+    <div class="sub2">
+      <div>Mutators: <b>{mutators}</b></div>
+      <div>Quality Pass: {int(blueprint.get("quality_pass", 1))}</div>
     </div>
     <canvas id="game" width="820" height="440"></canvas>
     <div class="hint">{gp.concept or "Auto-generated playable prototype by AI studio."}</div>
@@ -2845,6 +2863,7 @@ class Store:
         tier = int(blueprint.get("tier", 1))
         quality_pass = int(blueprint.get("quality_pass", 1))
         variant = str(blueprint.get("variant", "default")).lower()
+        mutators = {str(x).strip().lower() for x in (blueprint.get("mutators", []) or [])}
         if mode == "clicker":
             return f"""const cvs=document.getElementById('game');const ctx=cvs.getContext('2d');
 const scoreEl=document.getElementById('score');const timeEl=document.getElementById('time');
@@ -2896,19 +2915,20 @@ const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},h
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}},updateSocialHint:()=>{{}}}};
 const mission=M.getMission('rhythm');M.writeMissionHint('rhythm');
 let running=true,t={duration},score=0,combo=0,bestCombo=0,perfect=0,good=0,miss=0,lastJudge='READY';
-const bpm=108+Math.floor({difficulty}*3)+({tier}*6);const beatSec=60/Math.max(84,bpm);
-const perfectWin=0.08,goodWin=0.16;let startTs=performance.now();let lastCheckedBeat=0;const hitBeat=new Set();
-const dirs=[{{x:1,y:0}},{{x:0,y:1}},{{x:-1,y:0}},{{x:0,y:-1}}];const nodes=[];const totalBeats=Math.ceil(({duration}/beatSec))+3;const stepLen=40;
+const syncWindowBoost={1 if "sync_window" in mutators else 0},pulseShift={1 if "pulse_shift" in mutators else 0},feverChain={1 if "fever_chain" in mutators else 0},orbitVariance={1 if "orbit_variance" in mutators else 0};
+const bpm=108+Math.floor({difficulty}*3)+({tier}*6)+(pulseShift?8:0)+('{variant}'==='sync_switch'?6:0);const beatSec=60/Math.max(84,bpm);
+const perfectWin=(syncWindowBoost?0.095:0.08),goodWin=(syncWindowBoost?0.19:0.16);let startTs=performance.now();let lastCheckedBeat=0;const hitBeat=new Set();let fever=0;
+const dirs=[{{x:1,y:0}},{{x:0,y:1}},{{x:-1,y:0}},{{x:0,y:-1}}];const nodes=[];const totalBeats=Math.ceil(({duration}/beatSec))+3;const stepLen=(orbitVariance?36:40);
 function buildPath(){{let p={{x:cvs.width*0.5,y:92}};let d=1;nodes.push({{x:p.x,y:p.y}});
-for(let i=0;i<totalBeats;i++){{if(Math.random()<0.62)d=(d+(Math.random()<0.5?1:3))%4;let nx=p.x+dirs[d].x*stepLen,ny=p.y+dirs[d].y*stepLen;
+for(let i=0;i<totalBeats;i++){{if(Math.random()<(orbitVariance?0.74:0.62))d=(d+(Math.random()<0.5?1:3))%4;let nx=p.x+dirs[d].x*stepLen,ny=p.y+dirs[d].y*stepLen;
 if(nx<90||nx>cvs.width-90||ny<70||ny>cvs.height-70){{d=(d+2)%4;nx=p.x+dirs[d].x*stepLen;ny=p.y+dirs[d].y*stepLen;}}
 p={{x:nx,y:ny}};nodes.push({{x:p.x,y:p.y}});}}}}
 buildPath();
 function nowBeat(){{return (performance.now()-startTs)/1000/beatSec;}}
 function judgePress(){{if(!running)return;const b=nowBeat();const target=Math.round(b);if(target<=0||target>=nodes.length)return;if(hitBeat.has(target))return;
-const dist=Math.abs(b-target);if(dist<=perfectWin){{perfect++;combo++;score+=28+Math.floor(combo/4);lastJudge='PERFECT';E.audio.success();E.vfx.burst(nodes[target].x,nodes[target].y,'#7af0ff',1.2);hitBeat.add(target);}}
-else if(dist<=goodWin){{good++;combo++;score+=16+Math.floor(combo/6);lastJudge='GOOD';E.audio.hit();E.vfx.burst(nodes[target].x,nodes[target].y,'#9dd7ff',1.0);hitBeat.add(target);}}
-else{{miss++;combo=0;score=Math.max(0,score-4);lastJudge='MISS';E.audio.alert();}}
+const dist=Math.abs(b-target);if(dist<=perfectWin){{perfect++;combo++;fever=Math.min(100,fever+(feverChain?8:5));score+=28+Math.floor(combo/4)+(feverChain&&combo>=8?6:0);lastJudge='PERFECT';E.audio.success();E.vfx.burst(nodes[target].x,nodes[target].y,'#7af0ff',1.2);hitBeat.add(target);}}
+else if(dist<=goodWin){{good++;combo++;fever=Math.min(100,fever+3);score+=16+Math.floor(combo/6);lastJudge='GOOD';E.audio.hit();E.vfx.burst(nodes[target].x,nodes[target].y,'#9dd7ff',1.0);hitBeat.add(target);}}
+else{{miss++;combo=0;fever=Math.max(0,fever-16);score=Math.max(0,score-4);lastJudge='MISS';E.audio.alert();}}
 bestCombo=Math.max(bestCombo,combo);scoreEl.textContent=String(score);}}
 window.addEventListener('keydown',e=>{{const k=(e.key||'').toLowerCase();if(k===' '||k==='enter')judgePress();}});
 cvs.addEventListener('mousedown',()=>judgePress());
@@ -2922,9 +2942,10 @@ ctx.beginPath();ctx.arc(px,py,12,0,Math.PI*2);ctx.fillStyle='#8dd7ff';ctx.fill()
 ctx.fillStyle='#cde3ff';ctx.font='14px Segoe UI';ctx.fillText('원버튼: 스페이스/엔터/클릭',14,24);
 ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,44);
 ctx.fillText('판정 '+lastJudge+' | PERFECT '+perfect+' GOOD '+good+' MISS '+miss,14,64);
-ctx.fillText('BPM '+Math.round(bpm)+' | Combo '+combo,14,84);}}
+ctx.fillText('BPM '+Math.round(bpm)+' | Combo '+combo+' | Fever '+Math.floor(fever)+'%',14,84);}}
 function step(){{if(!running)return;const b=nowBeat();const passed=Math.floor(b-goodWin);
 for(let i=lastCheckedBeat+1;i<=passed;i++){{if(i>0&&i<nodes.length&&!hitBeat.has(i)){{miss++;combo=0;score=Math.max(0,score-2);lastJudge='MISS';}}}}
+if(pulseShift&&Math.floor(b)%16===0&&Math.random()<0.015)startTs-=beatSec*120;
 lastCheckedBeat=Math.max(lastCheckedBeat,passed);scoreEl.textContent=String(score);
 E.hud.set({{wave:1+Math.floor((({duration}-t)/Math.max(1,{duration}/3))),hp:Math.max(0,5-Math.min(4,miss)),combo:combo,note:lastJudge}});
 draw();requestAnimationFrame(step);}}
@@ -2990,34 +3011,41 @@ const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},h
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}},updateSocialHint:()=>{{}}}};
 const mission=M.getMission('dodge');M.writeMissionHint('dodge');
 let running=true,t={duration},score=0,tick=0,wave=1;
+const blackholePulse={1 if "blackhole_pulse" in mutators else 0},splitProjectiles={1 if "split_projectiles" in mutators else 0},nearMissBoost={1 if "near_miss_boost" in mutators else 0};
 let target={{x:cvs.width*0.5,y:cvs.height*0.55}};
 let head={{x:target.x,y:target.y,r:12}};let tail=[];let tailTarget=5;const segGap=14;
-let balls=[],bursts=[],energies=[];let near=0;let energyPicked=0;
+let balls=[],bursts=[],energies=[],holes=[];let near=0;let energyPicked=0;
 function rr(min,max){{return min+Math.random()*(max-min);}}
 function ensureTail(){{if(!tail.length){{for(let i=0;i<tailTarget;i++)tail.push({{x:head.x,y:head.y}});}}}}
 function spawnBall(){{const edge=Math.floor(Math.random()*4);let x=0,y=0;if(edge===0){{x=rr(0,cvs.width);y=-16;}}if(edge===1){{x=cvs.width+16;y=rr(0,cvs.height);}}if(edge===2){{x=rr(0,cvs.width);y=cvs.height+16;}}if(edge===3){{x=-16;y=rr(0,cvs.height);}}
 const speed=1.2+Math.random()*(1.2+{difficulty}*0.35)+tick*0.0018;const dx=head.x-x,dy=head.y-y,d=Math.max(1,Math.hypot(dx,dy));balls.push({{x,y,r:7+Math.random()*7,vx:(dx/d)*speed,vy:(dy/d)*speed}});}}
 function spawnEnergy(){{energies.push({{x:rr(42,cvs.width-42),y:rr(60,cvs.height-42),r:8,ttl:420}});}}
+function spawnHole(){{holes.push({{x:rr(80,cvs.width-80),y:rr(80,cvs.height-80),r:22+Math.random()*14,ttl:300}});}}
 function burst(x,y,col){{bursts.push({{x,y,life:24,col}});}}
 function drawBg(){{const g=ctx.createLinearGradient(0,0,0,cvs.height);g.addColorStop(0,'#101a31');g.addColorStop(1,'#0a1226');ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
 for(let i=0;i<24;i++){{const y=(i*25+(tick*0.55)%25)%cvs.height;ctx.fillStyle='rgba(96,132,190,0.11)';ctx.fillRect(0,y,cvs.width,1);}}}}
 function drawWorm(){{for(let i=tail.length-1;i>=0;i--){{const p=tail[i];const a=i/Math.max(1,tail.length);const r=Math.max(5,10-(a*4));ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fillStyle=i===0?'#89e8be':'#67c69c';ctx.fill();ctx.strokeStyle='rgba(10,32,26,0.5)';ctx.stroke();}}
 ctx.beginPath();ctx.arc(head.x,head.y,12,0,Math.PI*2);ctx.fillStyle='#75d0a2';ctx.fill();ctx.strokeStyle='rgba(12,40,32,0.65)';ctx.stroke();ctx.fillStyle='#0f2530';ctx.fillRect(head.x-4,head.y-2,2,2);ctx.fillRect(head.x+2,head.y-2,2,2);}}
 function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);drawBg();for(const b of balls){{ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle='#ff8b8b';ctx.fill();}}
+for(const h of holes){{ctx.beginPath();ctx.arc(h.x,h.y,h.r+6,0,Math.PI*2);ctx.fillStyle='rgba(80,120,255,0.12)';ctx.fill();ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,Math.PI*2);ctx.fillStyle='rgba(35,58,126,0.42)';ctx.fill();}}
 for(const e of energies){{ctx.beginPath();ctx.arc(e.x,e.y,e.r+2,0,Math.PI*2);ctx.fillStyle='rgba(255,236,150,0.25)';ctx.fill();ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fillStyle='#ffe58a';ctx.fill();}}
 drawWorm();for(const p of bursts){{ctx.beginPath();ctx.arc(p.x,p.y,28-p.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{p.life/24}})`;ctx.stroke();}}
-ctx.fillStyle='#dbe8ff';ctx.font='14px Segoe UI';ctx.fillText('꼬리 길이 '+tail.length+' / '+tailTarget,14,24);ctx.fillText('웨이브 '+wave+' | 에너지 '+energyPicked+' | 근접회피 '+Math.floor(near),14,44);}}
+ctx.fillStyle='#dbe8ff';ctx.font='14px Segoe UI';ctx.fillText('꼬리 길이 '+tail.length+' / '+tailTarget,14,24);ctx.fillText('웨이브 '+wave+' | 에너지 '+energyPicked+' | 근접회피 '+Math.floor(near),14,44);ctx.fillText('뮤테이터: '+(blackholePulse?'중력장 ':'')+(splitProjectiles?'분열탄 ':'')+(nearMissBoost?'근접보너스':''),14,64);}}
 cvs.addEventListener('mousemove',e=>{{const r=cvs.getBoundingClientRect();target.x=(e.clientX-r.left)*(cvs.width/r.width);target.y=(e.clientY-r.top)*(cvs.height/r.height);}});
 function step(){{if(!running)return;tick++;if(tick%160===0)wave++;
 head.x+=(target.x-head.x)*0.22;head.y+=(target.y-head.y)*0.22;ensureTail();while(tail.length<tailTarget)tail.push({{x:head.x,y:head.y}});while(tail.length>tailTarget)tail.pop();tail[0].x=head.x;tail[0].y=head.y;
 for(let i=1;i<tail.length;i++){{const prev=tail[i-1],cur=tail[i];const dx=prev.x-cur.x,dy=prev.y-cur.y,d=Math.hypot(dx,dy)||0.0001;const move=Math.max(0,d-segGap);cur.x+=(dx/d)*move;cur.y+=(dy/d)*move;}}
 if(tick%Math.max(8,18-wave*2)===0)spawnBall();
 if(tick%135===0&&energies.length<2)spawnEnergy();
+if(blackholePulse&&tick%260===0&&holes.length<2)spawnHole();
 for(const b of balls){{const scale=1+tick*0.00014;b.x+=b.vx*scale;b.y+=b.vy*scale;}}
+if(blackholePulse){{for(const h of holes){{for(const b of balls){{const dx=h.x-b.x,dy=h.y-b.y,d=Math.hypot(dx,dy)||0.001;const pull=Math.max(0,0.08-(d/2200));b.vx+=(dx/d)*pull;b.vy+=(dy/d)*pull;}}}}}}
+if(splitProjectiles&&tick%190===0&&balls.length<30){{const seed=balls[Math.floor(Math.random()*balls.length)];if(seed){{balls.push({{x:seed.x,y:seed.y,r:Math.max(5,seed.r*0.7),vx:-seed.vy*0.9,vy:seed.vx*0.9}});}}}}
 balls=balls.filter(b=>b.x>-60&&b.x<cvs.width+60&&b.y>-60&&b.y<cvs.height+60);
 for(const e of energies)e.ttl-=1;energies=energies.filter(e=>e.ttl>0);
+for(const h of holes)h.ttl-=1;holes=holes.filter(h=>h.ttl>0);
 for(const b of balls){{const d=Math.hypot(head.x-b.x,head.y-b.y);if(d<head.r+b.r){{running=false;E.audio.alert();burst(head.x,head.y,'#ff6b7f');}}
-else if(d<head.r+b.r+18){{near=Math.min(999,near+0.45);score+=1;}}}}
+else if(d<head.r+b.r+18){{near=Math.min(999,near+0.45);score+=nearMissBoost?2:1;}}}}
 for(let i=energies.length-1;i>=0;i--){{const e=energies[i];if(Math.hypot(head.x-e.x,head.y-e.y)<head.r+e.r+2){{energies.splice(i,1);energyPicked++;score+=6;tailTarget=Math.min(96,tailTarget+1);E.audio.success();burst(e.x,e.y,'#ffe58a');}}}}
 for(let i=6;i<tail.length;i++){{
   const p=tail[i];
@@ -3046,9 +3074,11 @@ const E=window.__studioEngine||{{audio:{{hit(){{}},alert(){{}},success(){{}}}},h
 const M=window.__studioMeta||{{getMission:()=>({{kind:'score',target:999,reward:0,label:'-'}}),resolveMission:()=>0,getCoins:()=>0,writeMissionHint:()=>{{}}}};
 const mission=M.getMission('aim');M.writeMissionHint('aim');
 const allowDual=('{variant}'==='multi_target'||{tier}>=3);
+const criticalStreak={1 if "critical_streak" in mutators else 0},movingCover={1 if "moving_cover" in mutators else 0},focusMeter={1 if "focus_meter" in mutators else 0},headshotMultiplier={1 if "headshot_multiplier" in mutators else 0};
 let score=0,t={duration},running=true,combo=0,bestCombo=0,mult=1.0,stage=1;
 let headshots=0,bodyshots=0,legshots=0,misses=0,lastShot='READY';
 let bots=[];let bursts=[];
+let focus=0;let coverBands=[{{x:120,w:120,y:188,h:22,v:1.1}},{{x:460,w:140,y:252,h:22,v:-0.9}}];
 function rr(min,max){{return min+Math.random()*(max-min);}}
 function mkBot(boost=1){{const s=0.9+Math.random()*0.44;const h=82*s;const w=34*s;const headR=11.5*s;const sp=(1.0+0.25*{tier})*boost;return{{x:rr(76,cvs.width-76),y:rr(120,cvs.height-78),vx:rr(-sp,sp),vy:rr(-sp,sp),w,h,headR,ttl:420+Math.floor(Math.random()*220),phase:Math.random()*6.28,armor:1+Math.floor(Math.random()*2),hue:190+Math.floor(Math.random()*70)}};}}
 function spawnBots(){{bots=[mkBot(1)];if(allowDual)bots.push(mkBot(1.1));}}
@@ -3081,22 +3111,25 @@ function draw(){{ctx.clearRect(0,0,cvs.width,cvs.height);const g=ctx.createLinea
 for(let i=0;i<18;i++){{const y=(i*28+(Date.now()*0.03)%28)%cvs.height;ctx.fillStyle='rgba(120,170,255,0.08)';ctx.fillRect(0,y,cvs.width,1);}}
 for(let i=0;i<6;i++){{const x=80+i*130;ctx.fillStyle='rgba(98,132,190,0.22)';ctx.fillRect(x,66,6,282);ctx.fillStyle='rgba(148,178,232,0.16)';ctx.fillRect(x-18,66,42,8);}}
 ctx.fillStyle='rgba(88,118,176,0.26)';ctx.fillRect(58,348,704,8);
+if(movingCover){{for(const c of coverBands){{ctx.fillStyle='rgba(40,62,108,0.85)';ctx.fillRect(c.x,c.y,c.w,c.h);ctx.strokeStyle='rgba(170,205,255,0.4)';ctx.strokeRect(c.x,c.y,c.w,c.h);}}}}
 for(const b of bots)drawBot(b);for(const b of bursts){{ctx.beginPath();ctx.arc(b.x,b.y,34-b.life,0,Math.PI*2);ctx.strokeStyle=`rgba(255,255,255,${{b.life/28}})`;ctx.stroke();}}
 ctx.fillStyle='#d9eaff';ctx.font='14px Segoe UI';ctx.fillText('x'+mult.toFixed(1)+' combo '+combo+' | '+lastShot,14,24);
 ctx.fillText('헤드 '+headshots+' 몸통 '+bodyshots+' 다리 '+legshots+' 미스 '+misses,14,44);
-ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target,14,64);}}
+ctx.fillText('미션 '+(mission.kind==='combo'?bestCombo:score)+'/'+mission.target+' | 집중 '+Math.floor(focus)+'%',14,64);}}
 function loop(){{if(!running)return;draw();updateBursts();requestAnimationFrame(loop);}}
 cvs.addEventListener('click',e=>{{if(!running)return;const r=cvs.getBoundingClientRect();const x=(e.clientX-r.left)*(cvs.width/r.width);const y=(e.clientY-r.top)*(cvs.height/r.height);
+if(movingCover){{for(const c of coverBands){{if(x>=c.x&&x<=c.x+c.w&&y>=c.y&&y<=c.y+c.h){{misses++;combo=0;focus=Math.max(0,focus-15);mult=Math.max(1,mult-0.25);score=Math.max(0,score-5);lastShot='COVER';E.audio.alert();burst(x,y,'#7aa2ff');scoreEl.textContent=String(score);return;}}}}}}
 let zone='';let botIdx=-1;for(let i=0;i<bots.length;i++){{const z=hitZone(x,y,bots[i]);if(z){{zone=z;botIdx=i;break;}}}}
-if(!zone){{misses++;combo=0;mult=Math.max(1,mult-0.2);score=Math.max(0,score-4);lastShot='MISS';E.audio.alert();burst(x,y,'#ff6b7f');}}
-else{{const b=bots[botIdx];let gain=0;if(zone==='head'){{gain=45;headshots++;lastShot='HEADSHOT';E.audio.success();burst(x,y,'#7af0ff');}}
+if(!zone){{misses++;combo=0;focus=Math.max(0,focus-12);mult=Math.max(1,mult-0.2);score=Math.max(0,score-4);lastShot='MISS';E.audio.alert();burst(x,y,'#ff6b7f');}}
+else{{const b=bots[botIdx];let gain=0;if(zone==='head'){{gain=45*(headshotMultiplier?1.2:1.0);headshots++;lastShot='HEADSHOT';E.audio.success();burst(x,y,'#7af0ff');}}
 else if(zone==='body'){{gain=22;bodyshots++;lastShot='BODY';E.audio.hit();burst(x,y,'#ffd166');}}
 else{{gain=12;legshots++;lastShot='LEG';E.audio.hit();burst(x,y,'#9de6a7');}}
-combo++;bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.5,1+combo*0.07);score+=Math.round(gain*mult);bots[botIdx]=mkBot(1+stage*0.08);}}
+combo++;focus=Math.min(100,focus+6+(zone==='head'?6:0));bestCombo=Math.max(bestCombo,combo);mult=Math.min(4.8,1+combo*0.07+(focusMeter?focus*0.003:0));if(criticalStreak&&combo>=10&&zone==='head')gain*=1.25;score+=Math.round(gain*mult);bots[botIdx]=mkBot(1+stage*0.08);}}
 scoreEl.textContent=String(score);}});
 spawnBots();loop();
 const timer=setInterval(()=>{{t-=1;timeEl.textContent=String(Math.max(0,t));stage=Math.min(4,1+Math.floor(({duration}-t)/Math.max(1,{duration}/4)));
 for(let i=0;i<bots.length;i++){{const b=bots[i];b.x+=b.vx;b.y+=b.vy;b.phase+=0.13;if(b.x<45||b.x>cvs.width-45)b.vx*=-1;if(b.y<84||b.y>cvs.height-62)b.vy*=-1;b.ttl--;if(b.ttl<=0)bots[i]=mkBot(1+stage*0.08);}}
+if(movingCover){{for(const c of coverBands){{c.x+=c.v;if(c.x<70||c.x+c.w>cvs.width-70)c.v*=-1;}}}}
 if(combo>0&&Math.random()<0.12)combo--;mult=Math.max(1,1+combo*0.06);
 E.hud.set({{wave:stage,hp:Math.max(0,6-Math.min(5,misses)),combo:combo,note:lastShot}});
 if(t<=0){{running=false;clearInterval(timer);
