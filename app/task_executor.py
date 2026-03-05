@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import re
@@ -8,6 +9,8 @@ import shutil
 import subprocess
 import time
 from typing import Any, Dict
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 from .store import Store
 
@@ -197,8 +200,6 @@ class DevGitHubPRExecutor(_CommandExecutor):
             return ExecutionResult(ok=False, summary=f"task not found: {task_id}")
         if shutil.which("git") is None:
             return ExecutionResult(ok=False, summary="git not available in runtime environment")
-        if shutil.which("gh") is None:
-            return ExecutionResult(ok=False, summary="gh cli not available; cannot auto-create PR")
 
         cfg = config or {}
         cwd = self._workdir()
@@ -222,6 +223,14 @@ class DevGitHubPRExecutor(_CommandExecutor):
             )
         ).strip()
         commit_message = str(cfg.get("message", f"auto: upgrade {project_id} gameplay pass")).strip()
+        gh_available = shutil.which("gh") is not None
+        gh_repo = str(cfg.get("repo", os.getenv("STUDIO_GITHUB_REPO", os.getenv("GITHUB_REPOSITORY", "")))).strip()
+        gh_token = str(cfg.get("token", os.getenv("GITHUB_TOKEN", ""))).strip()
+        if not gh_available and (not gh_repo or not gh_token):
+            return ExecutionResult(
+                ok=False,
+                summary="cannot create PR: neither gh cli nor GITHUB_TOKEN+repo configured",
+            )
 
         runs: list[Dict[str, Any]] = []
         runs.append(self._run_cmd("git status --porcelain", cwd=cwd, timeout_sec=timeout_sec))
@@ -235,11 +244,67 @@ class DevGitHubPRExecutor(_CommandExecutor):
             f"git add {add_target}",
             f'git commit -m "{commit_message}" --no-verify',
             f"git push -u origin {branch}",
-            f'gh pr create --base {base_branch} --head {branch} --title "{title}" --body "{body}"',
         ]:
             runs.append(self._run_cmd(cmd, cwd=cwd, timeout_sec=timeout_sec))
             if runs[-1]["returncode"] != 0:
                 break
+
+        if all(r["returncode"] == 0 for r in runs[1:]) and gh_available:
+            pr_cmd = f'gh pr create --base {base_branch} --head {branch} --title "{title}" --body "{body}"'
+            runs.append(self._run_cmd(pr_cmd, cwd=cwd, timeout_sec=timeout_sec))
+
+        api_pr_url = ""
+        if all(r["returncode"] == 0 for r in runs[1:]) and not gh_available:
+            try:
+                payload = {
+                    "title": title,
+                    "head": branch,
+                    "base": base_branch,
+                    "body": body,
+                }
+                req = urlrequest.Request(
+                    url=f"https://api.github.com/repos/{gh_repo}/pulls",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Authorization": f"Bearer {gh_token}",
+                        "Accept": "application/vnd.github+json",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urlrequest.urlopen(req, timeout=max(10, timeout_sec)) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(raw or "{}")
+                    api_pr_url = str(parsed.get("html_url", "")).strip()
+                    runs.append(
+                        {
+                            "command": "github_api_create_pr",
+                            "returncode": 0 if api_pr_url else 1,
+                            "stdout": raw[-4000:],
+                            "stderr": "",
+                            "duration_sec": 0.0,
+                        }
+                    )
+            except urlerror.HTTPError as exc:
+                runs.append(
+                    {
+                        "command": "github_api_create_pr",
+                        "returncode": int(getattr(exc, "code", 1) or 1),
+                        "stdout": "",
+                        "stderr": str(exc),
+                        "duration_sec": 0.0,
+                    }
+                )
+            except Exception as exc:
+                runs.append(
+                    {
+                        "command": "github_api_create_pr",
+                        "returncode": 1,
+                        "stdout": "",
+                        "stderr": str(exc),
+                        "duration_sec": 0.0,
+                    }
+                )
 
         ok = all(r["returncode"] == 0 for r in runs[1:])
         pr_url = ""
@@ -248,6 +313,8 @@ class DevGitHubPRExecutor(_CommandExecutor):
             for tok in out.split():
                 if tok.startswith("http://") or tok.startswith("https://"):
                     pr_url = tok
+        if not pr_url and api_pr_url:
+            pr_url = api_pr_url
         task = store.tasks[task_id]
         artifact = store.create_artifact(
             title=f"GitHub PR report for {task.id}",
